@@ -3,7 +3,7 @@
 DEBUG_INFO_THEN_EXIT=0
 CLOUDFLARE_ACCESS_SUBDOMAIN="mlcommons"
 CLOUDFLARE_ACCESS_LOGOUT_URL="https://${CLOUDFLARE_ACCESS_SUBDOMAIN}.cloudflareaccess.com/cdn-cgi/access/logout"
-USAGE_STRING="USAGE: $0 [-d download-path] [-x] [-h] <URL>"
+USAGE_STRING="USAGE: bash [-d download-path] [-x] [-h] <URL>"
 
 # Function to show help
 show_help() {
@@ -24,13 +24,13 @@ OPTIONS:
 
 EXAMPLES:
     # Download to current directory using dataset name
-    $0 https://inference-private.mlcommons-storage.org/metadata/llama3.url
+    bash https://inference-private.mlcommons-storage.org/metadata/llama3.url
 
     # Download to specific directory
-    $0 -d ./my-dataset https://inference-private.mlcommons-storage.org/metadata/llama3.url
+    bash -d ./my-dataset https://inference-private.mlcommons-storage.org/metadata/llama3.url
 
     # Debug mode to see how URL is parsed
-    $0 -x https://inference-private.mlcommons-storage.org/metadata/llama3.url
+    bash -x https://inference-private.mlcommons-storage.org/metadata/llama3.url
 
 REQUIREMENTS:
     - cloudflared (will be auto-installed if missing)  
