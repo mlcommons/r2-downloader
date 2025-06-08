@@ -4,8 +4,6 @@
 copy %~s0 %~s0.ps1 >nul
 PowerShell.exe -ExecutionPolicy Unrestricted -NoProfile -Command function :: {}; %~s0.ps1 '%1' '%2'
 del %~s0.ps1 >nul
-:: To avoid potentially leaving a window hanging, you could EXIT
-:: This is much nicer if you're calling this from an existing cmd window
 GOTO :EOF
 :: END POWERSHELL AS BATCH HEADER #>
 
