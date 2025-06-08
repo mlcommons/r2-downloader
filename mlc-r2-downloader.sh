@@ -722,7 +722,7 @@ urls_file=`mktemp`	# Generated URL list for wget
 echo "Downloading checksums file..."
 
 # Download the hashes file  
-wget --header="cf-access-token: $TOKEN" --max-redirect=0 --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 -q -P "$download_dir" "$hashes_url" || { echo "Error: Failed to download checksums file from $hashes_url." >&2; exit 1; }
+wget --header="cf-access-token: $TOKEN" --max-redirect=0 --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 -nc -q -P "$download_dir" "$hashes_url" || { echo "Error: Failed to download checksums file from $hashes_url." >&2; exit 1; }
 
 echo "Preparing file list for download..."
 
