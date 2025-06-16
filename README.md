@@ -37,7 +37,7 @@ The basic command syntax is:
 bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) <URL>
 ```
 
-Where `<URL>` is the path to a dataset metadata file (*.url) in a R2 bucket. This metadata file will point the downloader to the appropriate dataset files.
+Where `<URL>` is the path to a dataset metadata file (*.uri) in a R2 bucket. This metadata file will point the downloader to the appropriate dataset files.
 
 ### Command Options
 
