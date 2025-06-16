@@ -13,7 +13,7 @@ MLCommons R2 Downloader - Download files from Cloudflare R2 buckets protected by
 $USAGE_STRING
 
 ARGUMENTS:
-    <URL>                   URL to the dataset metadata file (*.url) on the R2 bucket
+    <URL>                   URL to the dataset metadata file (*.uri) on the R2 bucket
                            This file contains the base URL for the dataset files
 
 OPTIONS:
@@ -24,13 +24,13 @@ OPTIONS:
 
 EXAMPLES:
     # Download to current directory using dataset name
-    bash https://inference-private.mlcommons-storage.org/metadata/llama3.url
+    bash https://inference-private.mlcommons-storage.org/metadata/llama3.uri
 
     # Download to specific directory
-    bash -d ./my-dataset https://inference-private.mlcommons-storage.org/metadata/llama3.url
+    bash -d ./my-dataset https://inference-private.mlcommons-storage.org/metadata/llama3.uri
 
     # Debug mode to see how URL is parsed
-    bash -x https://inference-private.mlcommons-storage.org/metadata/llama3.url
+    bash -x https://inference-private.mlcommons-storage.org/metadata/llama3.uri
 
 REQUIREMENTS:
     - cloudflared (will be auto-installed if missing)  
@@ -580,7 +580,7 @@ check_token_expiration "$TOKEN"
 # Regexp taken from Perplexity.ai, referencing StackOverflow
 if [[ ! $url_dataset_info =~ ^(([^:/?#]+):)?(//([^/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))? ]]; then
     echo "Error: Could not parse the download URL. Please check that it was entered correctly." >&2
-    echo "Expected format: https://domain.com/path/to/dataset.url" >&2
+    echo "Expected format: https://domain.com/path/to/dataset.uri" >&2
     echo "Received: $url_dataset_info" >&2
     exit 1
 fi
@@ -606,36 +606,36 @@ fi
 
 if [[ -z "$path" ]]; then
     echo "Error: URL missing file path" >&2
-    echo "Expected format: https://domain.com/path/to/dataset.url" >&2
+    echo "Expected format: https://domain.com/path/to/dataset.uri" >&2
     echo "Received: $url_dataset_info" >&2
     exit 1
 fi
 
-# Check if the URL ends with .url
-if [[ ! "$path" =~ \.url$ ]]; then
-    echo "Error: URL path does not end with .url extension" >&2
-    echo "This script is designed to work with dataset metadata files (.url)" >&2
-    echo "Expected format: https://domain.com/path/to/dataset.url" >&2
+# Check if the URL ends with .uri
+if [[ ! "$path" =~ \.uri$ ]]; then
+    echo "Error: URL path does not end with .uri extension" >&2
+    echo "This script is designed to work with dataset metadata files (.uri)" >&2
+    echo "Expected format: https://domain.com/path/to/dataset.uri" >&2
     echo "Received: $url_dataset_info" >&2
     echo "Path component: $path" >&2
     exit 1
 fi
 
-# Determine dataset name from the URL filename, ex: llama3.url -> llama3
-dataset_name=`basename -s .url "$path"`
+# Determine dataset name from the URL filename, ex: llama3.uri -> llama3
+dataset_name=`basename -s .uri "$path"`
 
 # Validate dataset name
 if [[ -z "$dataset_name" || "$dataset_name" == "." ]]; then
     echo "Error: Could not determine dataset name from URL path" >&2
     echo "URL path: $path" >&2
-    echo "Expected format: https://domain.com/path/to/dataset.url" >&2
+    echo "Expected format: https://domain.com/path/to/dataset.uri" >&2
     exit 1
 fi
 
 # Define the hashes file name using the dataset name
 HASHES_FILE_NAME="$dataset_name.md5"
 
-# Same as the directory where the .url is
+# Same as the directory where the .uri is
 hashes_path=`dirname "$path" | cut -c 2-`
 
 # Avoid creating a download URL with "//" after the hostname
