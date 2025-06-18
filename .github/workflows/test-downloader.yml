@@ -72,4 +72,4 @@ jobs:
         CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
       run: |
         # Run script with service account and testing mode flags
-        bash ./mlc-r2-downloader.sh -st https://auth-test.mlcommons-storage.org/metadata/dataset.uri 
+        bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri
