@@ -44,10 +44,17 @@ jobs:
         CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
         CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
       run: |
-        echo "CF_ACCESS_CLIENT_ID: $CF_ACCESS_CLIENT_ID"
-        echo "CF_ACCESS_CLIENT_SECRET: $CF_ACCESS_CLIENT_SECRET"
-        # First test with debug mode and service account
+        # Test debug mode - expect exit code 100
+        set +e  # Don't exit on error
         bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri
+        exit_code=$?
+        
+        if [ $exit_code -eq 100 ]; then
+          echo "✅ Debug mode test PASSED (expected exit code 100)"
+        else
+          echo "❌ Debug mode test FAILED (unexpected exit code: $exit_code)"
+          exit 1
+        fi
         
     - name: Test script with service account and testing mode
       env:
