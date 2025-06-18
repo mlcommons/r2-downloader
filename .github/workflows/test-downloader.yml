@@ -39,9 +39,14 @@ jobs:
         CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
         CF_ACCESS_CLIENT_SECRET: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
       
-    - name: Test script with debug mode
+    - name: Test script with debug mode and service account
+      env:
+        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
+        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
       run: |
-        # First test with debug mode
+        echo "CF_ACCESS_CLIENT_ID: $CF_ACCESS_CLIENT_ID"
+        echo "CF_ACCESS_CLIENT_SECRET: $CF_ACCESS_CLIENT_SECRET"
+        # First test with debug mode and service account
         bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri
         
     - name: Test script with service account and testing mode
