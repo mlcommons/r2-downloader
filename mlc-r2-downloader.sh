@@ -3,7 +3,7 @@
 DEBUG_INFO_THEN_EXIT=0
 CLOUDFLARE_ACCESS_SUBDOMAIN="mlcommons"
 CLOUDFLARE_ACCESS_LOGOUT_URL="https://${CLOUDFLARE_ACCESS_SUBDOMAIN}.cloudflareaccess.com/cdn-cgi/access/logout"
-USAGE_STRING="USAGE: bash [-d download-path] [-x] [-h] <URL>"
+USAGE_STRING="USAGE: bash [-d download-path] [-s] [-x] [-h] <URL>"
 
 # Function to show help
 show_help() {
@@ -19,6 +19,9 @@ ARGUMENTS:
 OPTIONS:
     -d download-path       Directory where files will be downloaded
                            Defaults to the dataset name from the URL if not specified
+    -s                     Use service account credentials (requires CF_ACCESS_CLIENT_ID and
+                           CF_ACCESS_CLIENT_SECRET environment variables)
+    -t                     Testing mode - forces cloudflared check/install even when using service account
     -x                     Debug mode - shows parsed URL components and configuration then exits
     -h                     Show this help message and exit
 
@@ -28,6 +31,12 @@ EXAMPLES:
 
     # Download to specific directory
     bash -d ./my-dataset https://inference-private.mlcommons-storage.org/metadata/llama3.uri
+
+    # Use service account authentication
+    bash -s https://inference-private.mlcommons-storage.org/metadata/llama3.uri
+
+    # Use service account with testing mode (checks cloudflared even with service account)
+    bash -s -t https://inference-private.mlcommons-storage.org/metadata/llama3.uri
 
     # Debug mode to see how URL is parsed
     bash -x https://inference-private.mlcommons-storage.org/metadata/llama3.uri
@@ -48,10 +57,16 @@ EOF
 }
 
 # Parse command line options  
-while getopts "d:xh" opt; do
+while getopts "d:xhst" opt; do
     case $opt in
         d)
             download_dir="$OPTARG"
+            ;;
+        s)
+            SERVICE_ACCOUNT=1
+            ;;
+        t)
+            TESTING_MODE=1
             ;;
         x)  # Use -x for debug mode
             DEBUG_INFO_THEN_EXIT=1
@@ -81,6 +96,16 @@ fi
 shift $((OPTIND - 1))
 
 url_dataset_info=$1
+
+# Determine if we should use cloudflared
+# Use cloudflared if:
+# - Not using service account (-s not specified), OR
+# - Using testing mode (-t specified)
+if [[ $SERVICE_ACCOUNT != 1 || $TESTING_MODE == 1 ]]; then
+    USE_CLOUDFLARED=1
+else
+    USE_CLOUDFLARED=0
+fi
 
 # Global cleanup function
 cleanup() {
@@ -307,11 +332,13 @@ check_dependency "mktemp"
 check_dependency "wget"
 
 # Check for cloudflared & install if not found or if version is too old
-echo "Checking dependencies..."
-if ! command -v cloudflared &> /dev/null; then
-    echo "cloudflared not found. Attempting to install..."
-    install_cloudflared
-else
+# Only check/install cloudflared if USE_CLOUDFLARED is set
+if [[ $USE_CLOUDFLARED == 1 ]]; then
+    echo "Checking dependencies..."
+    if ! command -v cloudflared &> /dev/null; then
+        echo "cloudflared not found. Attempting to install..."
+        install_cloudflared
+    else
     # Check cloudflared version
     version_info=$(cloudflared --version 2>&1)
     if [[ $version_info =~ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
@@ -344,6 +371,7 @@ else
                 install_cloudflared
             fi
         fi
+    fi
     fi
 fi
 
@@ -403,13 +431,50 @@ fi
 
 echo "Logging in to Cloudflare Access at ${url_dataset_info}..."
 
-# Log in to Cloudflare Access, showing full output except removing the token block.
-# NOTE: the "sed" command omits the token from the console output
-cloudflared access login "${url_dataset_info}" 2>&1 | sed '/Successfully fetched your token:/ { N; N; d; }' || { 
-    echo "Error: Failed to authenticate with Cloudflare Access." >&2
-    echo "Please check your network connection and try again." >&2
-    exit 1
-}
+# Validate service-account environment variables if the -s flag is set
+if [[ $SERVICE_ACCOUNT == 1 ]]; then
+    if [[ -z "$CF_ACCESS_CLIENT_ID" || -z "$CF_ACCESS_CLIENT_SECRET" ]]; then
+        echo "Error: -s specified but CF_ACCESS_CLIENT_ID and/or CF_ACCESS_CLIENT_SECRET are not set in the environment." >&2
+        echo "Export both variables then re-run the script, e.g.:" >&2
+        echo "  export CF_ACCESS_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.access" >&2
+        echo "  export CF_ACCESS_CLIENT_SECRET=yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy" >&2
+        exit 1
+    fi
+fi
+
+# If using a service account, get the access token by accessing the application and dumping the protocol headers
+if [[ $SERVICE_ACCOUNT == 1 ]]; then
+    echo "Using service account for authentication..."
+
+    # Retrieve response headers so we can extract the CF_Authorization cookie
+    headers=$(curl -s -D - -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+                     -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+                     "$url_dataset_info" -o /dev/null) || {
+        echo "Error: Failed to authenticate with Cloudflare Access." >&2
+        echo "Please check your network connection and try again." >&2
+        exit 1
+    }
+
+    # Isolate the JWT contained in the CF_Authorization cookie
+    # 1. remove any carriage returns; 2. find the set-cookie header; 3. strip everything
+    #    except the value portion before the first semicolon.
+    TOKEN=$(echo "$headers" | tr -d '\r' | grep -i '^set-cookie:[[:space:]]*CF_Authorization=' \
+                 | head -n1 | sed -e 's/^set-cookie:[[:space:]]*CF_Authorization=//' -e 's/;.*$//')
+
+    if [[ -z "$TOKEN" ]]; then
+        echo "Error: Unable to extract CF_Authorization token from response headers." >&2
+        exit 1
+    fi
+# If not using a service account, get the access token using cloudflared
+else
+    # Log in to Cloudflare Access, showing full output except removing the token block.
+    # NOTE: the "sed" command omits the token from the console output
+    cloudflared access login "${url_dataset_info}" 2>&1 | sed '/Successfully fetched your token:/ { N; N; d; }' || { 
+        echo "Error: Failed to authenticate with Cloudflare Access." >&2
+        echo "Please check your network connection and try again." >&2
+        exit 1
+    }
+fi
 
 echo "Authentication successful!"
 
@@ -492,9 +557,16 @@ check_token_expiration() {
     
     echo "Cloudflare Access token will expire in $(format_time_units $days $hours $minutes)"
     
-    # If fewer than 3 days until expiry, re-authenticate
+    # If fewer than 3 days until expiry, re-authenticate (but only if not using service account)
     if [ $time_until_expiry -lt 259200 ]; then
         echo "Warning: Cloudflare Access token will expire in less than 3 days, which could cause the download to fail" >&2
+        
+        # Skip re-authentication if using service account (even in testing mode) as service account tokens are newly generated on every run
+        if [[ $SERVICE_ACCOUNT == 1 ]]; then
+            echo "Service account detected - skipping automatic re-authentication" >&2
+            return
+        fi
+        
         echo -e "Re-authenticating...\n"
         echo "A browser window should have opened at the following URL to logout:" >&2
         echo "${CLOUDFLARE_ACCESS_LOGOUT_URL}" >&2
@@ -566,15 +638,22 @@ check_token_expiration() {
     fi
 }
 
-# Download the access token after authentication
-TOKEN=`cloudflared access token --app="$url_dataset_info"` || { 
-    echo "Error: Failed to get access token." >&2
-    echo "Please re-run the script to re-authenticate." >&2
-    exit 1
-}
+# If not using a service account, get the access token using cloudflared
+if [[ $SERVICE_ACCOUNT != 1 ]]; then
+    # Download the access token after authentication
+    TOKEN=`cloudflared access token --app="$url_dataset_info"` || { 
+        echo "Error: Failed to get access token." >&2
+        echo "Please re-run the script to re-authenticate." >&2
+        exit 1
+    }
 
-echo "Checking token expiration time..."
-check_token_expiration "$TOKEN"
+fi
+
+# Check token expiration time if using cloudflared
+if [[ $USE_CLOUDFLARED == 1 ]]; then
+    echo "Checking token expiration time..."
+    check_token_expiration "$TOKEN"
+fi
 
 # Retrieve the base path of the URL
 # Regexp taken from Perplexity.ai, referencing StackOverflow
@@ -673,13 +752,15 @@ echo "Download directory: $download_dir"
 
 if [[ $DEBUG_INFO_THEN_EXIT == 1 ]]; then
 
-  echo "DEBUG INFO START"
+  echo -e "\nDEBUG INFO START"
 
   echo -e "\nSystem info\n"
 
   echo "OS: $OS"
   echo "HASH_CHECKER: $HASH_CHECKER"
   echo "BROWSER_OPENER: $BROWSER_OPENER"
+  echo "USE_CLOUDFLARED: $USE_CLOUDFLARED"
+  echo "TESTING_MODE: $TESTING_MODE"
 
   echo -e "\nInitial request\n"
 
@@ -703,7 +784,7 @@ if [[ $DEBUG_INFO_THEN_EXIT == 1 ]]; then
   echo "cut_dirs: $cut_dirs"
   echo "download_dir: $download_dir"
 
-  echo -e "\nDEBUG INFO END\n"
+  echo -e "\nDEBUG INFO END"
 
   exit 100
 fi
