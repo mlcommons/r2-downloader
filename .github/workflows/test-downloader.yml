@@ -32,6 +32,13 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Install dependencies
+      run: |
+        if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+          # Install md5sum on macOS (not available by default)
+          brew install md5sha1sum
+        fi
+        
     - name: Load secrets
       id: op-load-secrets
       uses: 1password/load-secrets-action@v2
