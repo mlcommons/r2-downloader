@@ -135,6 +135,9 @@ jobs:
         $output = wsl bash -c 'export CF_ACCESS_CLIENT_ID="${{ steps.fetch-secrets.outputs.client-id }}"; export CF_ACCESS_CLIENT_SECRET="${{ steps.fetch-secrets.outputs.client-secret }}"; bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri'
         $exitCode = $LASTEXITCODE
         
+        # Display the debug output
+        Write-Host "Debug output:"
+        Write-Host $output
         Write-Host "Script exit code: $exitCode"
         
         if ($exitCode -eq 100) {
