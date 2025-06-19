@@ -544,6 +544,60 @@ get_jwt_expiration() {
     echo "$exp"
 }
 
+# Function to confirm token invalidation
+confirm_token_invalidation() {
+    local max_polls=$1
+    local poll_interval=$2
+    local full_confirmation=$3  # true = full confirmation for re-auth, false = testing only
+    local poll_count=0
+    local max_minutes=$((max_polls * poll_interval / 60))  # Calculate maximum minutes of polling
+    
+    while [ $poll_count -lt $max_polls ]; do
+        poll_count=$((poll_count + 1))
+        echo "Checking token status (attempt $poll_count of $max_polls)..."
+        
+        # Test if token is still valid by trying to access the protected resource
+        local http_code
+        http_code=$(curl -H "cf-access-token: $TOKEN" --max-time 60 --retry 1 --retry-connrefused --silent --write-out "%{http_code}" --output /dev/null "$url_dataset_info" 2>/dev/null)
+        
+        if [ "$http_code" = "200" ]; then
+            echo "Token still valid (HTTP $http_code)"
+            if [ $poll_count -lt $max_polls ]; then
+                echo "Waiting $poll_interval seconds before next check..."
+                sleep $poll_interval
+            elif [[ $full_confirmation == true ]]; then
+                echo "Token still valid after final attempt."
+            fi
+        elif [ "$http_code" = "302" ]; then
+            echo "Token invalidated! (HTTP $http_code - redirected to login)"
+            if [[ $full_confirmation == true ]]; then
+                echo "Starting authentication..."
+            fi
+            break
+        else
+            echo "HTTP response: $http_code"
+            if [[ $full_confirmation == true ]]; then
+                echo " - this may indicate a service issue" >&2
+            fi
+            
+            if [ $poll_count -lt $max_polls ]; then
+                echo "Waiting $poll_interval seconds before retrying..."
+                sleep $poll_interval
+            elif [[ $full_confirmation == true ]]; then
+                echo "Proceeding with authentication attempt anyway..."
+                break
+            fi
+        fi
+    done
+    
+    # Handle timeout case for full confirmation mode
+    if [[ $full_confirmation == true && $poll_count -ge $max_polls ]]; then
+        echo "Warning: Token may still be valid after $max_minutes minutes of waiting" >&2
+        echo "Try logging out again, checking for network issues, and re-running the script." >&2
+        exit 1
+    fi
+}
+
 # Function to check token expiration
 check_token_expiration() {
     local token=$1
@@ -577,37 +631,8 @@ check_token_expiration() {
         # In testing mode, do limited token invalidation testing and skip interactive parts
         if [[ $TESTING_MODE == 1 ]]; then
             echo "Testing mode: attempting limited token invalidation confirmation..."
-            local poll_count=0
-            local max_polls=3  # Limited attempts for testing
-            local poll_interval=5  # Shorter interval for testing
-            
-            while [ $poll_count -lt $max_polls ]; do
-                poll_count=$((poll_count + 1))
-                echo "Testing token status (attempt $poll_count of $max_polls)..."
-                
-                # Test if token is still valid by trying to access the protected resource
-                local http_code
-                http_code=$(curl -H "cf-access-token: $TOKEN" --max-time 30 --retry 1 --retry-connrefused --silent --write-out "%{http_code}" --output /dev/null "$url_dataset_info" 2>/dev/null)
-                
-                if [ "$http_code" = "200" ]; then
-                    echo "Token still valid (HTTP $http_code)"
-                    if [ $poll_count -lt $max_polls ]; then
-                        echo "Waiting $poll_interval seconds before next check..."
-                        sleep $poll_interval
-                    fi
-                elif [ "$http_code" = "302" ]; then
-                    echo "Token invalidated! (HTTP $http_code - redirected to login)"
-                    break
-                else
-                    echo "HTTP response: $http_code"
-                    if [ $poll_count -lt $max_polls ]; then
-                        echo "Waiting $poll_interval seconds before retrying..."
-                        sleep $poll_interval
-                    fi
-                fi
-            done
-            
-            echo "Testing mode: completed token invalidation test after $poll_count attempts"
+            confirm_token_invalidation 2 5 false  # 2 attempts, 5 second intervals, testing only
+            echo "Testing mode: completed token invalidation test"
             return
         fi
         
@@ -626,46 +651,7 @@ check_token_expiration() {
         
         # Token needs to be invalidated before re-authentication can be performed
         echo "Confirming token is invalidated..."
-        local poll_count=0
-        local max_polls=20
-        local poll_interval=15
-        local max_minutes=$((max_polls * poll_interval / 60))  # Calculate maximum minutes of polling
-        
-        while [ $poll_count -lt $max_polls ]; do
-            poll_count=$((poll_count + 1))
-            echo "Checking token status (attempt $poll_count of $max_polls)..."
-            
-            # Test if token is still valid by trying to access the protected resource
-            local http_code
-            http_code=$(curl -H "cf-access-token: $TOKEN" --max-time 60 --retry 3 --retry-connrefused --silent --write-out "%{http_code}" --output /dev/null "$url_dataset_info" 2>/dev/null)
-            
-            if [ "$http_code" = "200" ]; then
-                if [ $poll_count -lt $max_polls ]; then
-                    echo "Token still valid, waiting $poll_interval seconds before next check..."
-                    sleep $poll_interval
-                else
-                    echo "Token still valid after final attempt."
-                fi
-            elif [ "$http_code" = "302" ]; then
-                echo "Token invalidated! (HTTP $http_code - redirected to login) Starting authentication..."
-                break
-            else
-                echo "Unexpected HTTP response: $http_code - this may indicate a service issue" >&2
-                if [ $poll_count -lt $max_polls ]; then
-                    echo "Waiting $poll_interval seconds before retrying..."
-                    sleep $poll_interval
-                else
-                    echo "Proceeding with authentication attempt anyway..."
-                    break
-                fi
-            fi
-        done
-        
-        if [ $poll_count -ge $max_polls ]; then
-            echo "Warning: Token may still be valid after $max_minutes minutes of waiting" >&2
-            echo "Try logging out again, checking for network issues, and re-running the script." >&2
-            exit 1
-        fi
+        confirm_token_invalidation 20 15 true  # 20 attempts, 15 second intervals, full confirmation
         
         # Run authentication since token should now be invalid
         get_token
