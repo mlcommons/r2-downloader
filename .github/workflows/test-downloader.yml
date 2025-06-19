@@ -139,6 +139,7 @@ jobs:
         
         if ($exitCode -eq 100) {
           Write-Host "✅ WSL Debug mode test PASSED (expected exit code 100)"
+          exit 0
         } else {
           Write-Host "❌ WSL Debug mode test FAILED (unexpected exit code: $exitCode)"
           exit 1
