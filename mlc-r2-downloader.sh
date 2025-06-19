@@ -574,9 +574,40 @@ check_token_expiration() {
     if [ $time_until_expiry -lt 259200 ]; then
         echo "Warning: Cloudflare Access token will expire in less than 3 days, which could cause the download to fail" >&2
         
-        # Skip re-authentication if using service account (even in testing mode) as service account tokens are newly generated on every run
-        if [[ $SERVICE_ACCOUNT == 1 ]]; then
-            echo "Service account detected - skipping automatic re-authentication" >&2
+        # In testing mode, do limited token invalidation testing and skip interactive parts
+        if [[ $TESTING_MODE == 1 ]]; then
+            echo "Testing mode: attempting limited token invalidation confirmation..."
+            local poll_count=0
+            local max_polls=3  # Limited attempts for testing
+            local poll_interval=5  # Shorter interval for testing
+            
+            while [ $poll_count -lt $max_polls ]; do
+                poll_count=$((poll_count + 1))
+                echo "Testing token status (attempt $poll_count of $max_polls)..."
+                
+                # Test if token is still valid by trying to access the protected resource
+                local http_code
+                http_code=$(curl -H "cf-access-token: $TOKEN" --max-time 30 --retry 1 --retry-connrefused --silent --write-out "%{http_code}" --output /dev/null "$url_dataset_info" 2>/dev/null)
+                
+                if [ "$http_code" = "200" ]; then
+                    echo "Token still valid (HTTP $http_code)"
+                    if [ $poll_count -lt $max_polls ]; then
+                        echo "Waiting $poll_interval seconds before next check..."
+                        sleep $poll_interval
+                    fi
+                elif [ "$http_code" = "302" ]; then
+                    echo "Token invalidated! (HTTP $http_code - redirected to login)"
+                    break
+                else
+                    echo "HTTP response: $http_code"
+                    if [ $poll_count -lt $max_polls ]; then
+                        echo "Waiting $poll_interval seconds before retrying..."
+                        sleep $poll_interval
+                    fi
+                fi
+            done
+            
+            echo "Testing mode: completed token invalidation test after $poll_count attempts"
             return
         fi
         
