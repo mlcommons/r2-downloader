@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-r2-downloader:
+  test-linux-macos:
     runs-on: ${{ matrix.os }}
     environment: testing
     timeout-minutes: 10
@@ -100,6 +100,9 @@ jobs:
       run: |
         # Set service account token
         $Env:OP_SERVICE_ACCOUNT_TOKEN = "${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}"
+        
+        # Refresh PATH to ensure op command is available
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User") 
         
         # Verify service account configuration
         op user get --me
