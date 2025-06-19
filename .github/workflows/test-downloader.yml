@@ -234,11 +234,10 @@ jobs:
         CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
       run: |
         # Convert GITHUB_WORKSPACE to a Cygwin path and cd into repo
-        repo_path=$(cygpath -u "$GITHUB_WORKSPACE")
-        cd "$repo_path"
+        repo_path=$(cygpath -u "$GITHUB_WORKSPACE" | tr -d '\r')
 
         # Run downloader in debug mode; it should exit 100
-        bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri
+        bash "$repo_path/mlc-r2-downloader.sh" -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri
         exit_code=$?
         if [ "$exit_code" -eq 100 ]; then
           echo "[PASS] Cygwin debug mode passed (exit 100)"
@@ -254,15 +253,14 @@ jobs:
         CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
       run: |
         # Convert GITHUB_WORKSPACE to a Cygwin path and cd into repo
-        repo_path=$(cygpath -u "$GITHUB_WORKSPACE")
-        cd "$repo_path"
+        repo_path=$(cygpath -u "$GITHUB_WORKSPACE" | tr -d '\r')
 
         echo "[INFO] Testing service account authentication in Cygwin using proper Cygwin shell:"
         echo "Working directory: $(pwd)"
         echo "Using wget: $(wget --version | head -1)"
         
         # Test the service account authentication with the fixed script
-        bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri
+        bash "$repo_path/mlc-r2-downloader.sh" -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri
         exit_code=$?
         
         if [ $exit_code -eq 0 ]; then
