@@ -20,10 +20,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  test-r2-downloader:
     runs-on: ${{ matrix.os }}
     environment: testing
-    timeout-minutes: 30
+    timeout-minutes: 10
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -73,3 +73,73 @@ jobs:
       run: |
         # Run script with service account and testing mode flags
         bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri
+
+  test-windows-wsl:
+    runs-on: windows-2025
+    environment: testing
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install 1Password CLI
+      run: |
+        # Install 1Password CLI using winget
+        winget install 1password-cli
+        
+        # Test that the installation worked
+        op --version
+      shell: powershell
+      
+    - name: Configure 1Password and fetch secrets
+      id: fetch-secrets
+      run: |
+        # Set service account token
+        $Env:OP_SERVICE_ACCOUNT_TOKEN = "${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}"
+        
+        # Verify service account configuration
+        op user get --me
+        
+        # Fetch secrets using op read
+        $CF_ACCESS_CLIENT_ID = op read "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
+        $CF_ACCESS_CLIENT_SECRET = op read "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
+        
+        # Export as step outputs
+        echo "client-id=$CF_ACCESS_CLIENT_ID" >> $env:GITHUB_OUTPUT
+        echo "client-secret=$CF_ACCESS_CLIENT_SECRET" >> $env:GITHUB_OUTPUT
+      shell: powershell
+      
+    - name: Setup WSL
+      uses: Vampire/setup-wsl@v5
+      with:
+        distribution: Ubuntu-22.04
+        
+    - name: Test script in WSL with debug mode
+      run: |
+        wsl bash -c "
+          export CF_ACCESS_CLIENT_ID='${{ steps.fetch-secrets.outputs.client-id }}'
+          export CF_ACCESS_CLIENT_SECRET='${{ steps.fetch-secrets.outputs.client-secret }}'
+          
+          # Test debug mode - expect exit code 100
+          set +e
+          bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri
+          exit_code=\$?
+          
+          if [ \$exit_code -eq 100 ]; then
+            echo '✅ WSL Debug mode test PASSED (expected exit code 100)'
+          else
+            echo '❌ WSL Debug mode test FAILED (unexpected exit code: '\$exit_code')'
+            exit 1
+          fi
+        "
+        
+    - name: Test script in WSL with service account and testing mode
+      run: |
+        wsl bash -c "
+          export CF_ACCESS_CLIENT_ID='${{ steps.fetch-secrets.outputs.client-id }}'
+          export CF_ACCESS_CLIENT_SECRET='${{ steps.fetch-secrets.outputs.client-secret }}'
+          
+          # Run script with service account and testing mode flags
+          bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri
+        "
