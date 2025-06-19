@@ -244,10 +244,8 @@ install_cloudflared() {
         exit 1
     fi
     
-    # Make it executable (only on Unix-like systems)
-    if [[ "$OS" != "cygwin" ]]; then
-        chmod +x "$BINARY_NAME"
-    fi
+    # Make it executable
+    chmod +x "$BINARY_NAME"
     
     # Create install directory if it doesn't exist (only for Cygwin)
     if [[ "$OS" == "cygwin" ]]; then
