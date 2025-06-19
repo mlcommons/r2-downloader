@@ -82,6 +82,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        autocrlf: false
       
     - name: Install 1Password CLI
       run: |
