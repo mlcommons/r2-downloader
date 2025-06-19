@@ -447,24 +447,14 @@ if [[ $SERVICE_ACCOUNT == 1 ]]; then
     echo "Using service account for authentication..."
 
     # Retrieve response headers so we can extract the CF_Authorization cookie
-    if [[ "$OS" == "test" ]]; then
-        # In Cygwin use wget to avoid Windows curl PATH issues
-        headers=$(wget --header="CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
-                       --header="CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
-                       --save-headers --quiet -O - "$url_dataset_info") || {
-            echo "Error: Failed to authenticate with Cloudflare Access." >&2
-            echo "Please check your network connection and try again." >&2
-            exit 1
-        }
-    else
-        headers=$(curl -s -D - -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
-                         -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
-                         "$url_dataset_info" -o /dev/null) || {
-            echo "Error: Failed to authenticate with Cloudflare Access." >&2
-            echo "Please check your network connection and try again." >&2
-            exit 1
-        }
-    fi
+    # Use wget with --spider to only fetch headers without downloading content
+    headers=$(wget --header="CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+                   --header="CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+                   --spider --save-headers --quiet -O - "$url_dataset_info" 2>&1) || {
+        echo "Error: Failed to authenticate with Cloudflare Access." >&2
+        echo "Please check your network connection and try again." >&2
+        exit 1
+    }
 
     # Isolate the JWT contained in the CF_Authorization cookie
     # 1. remove any carriage returns; 2. find the set-cookie header; 3. strip everything
