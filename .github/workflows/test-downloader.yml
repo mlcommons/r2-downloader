@@ -228,17 +228,19 @@ jobs:
       shell: powershell
       
     - name: Test script in Cygwin with debug mode
-      shell: 'C:\cygwin64\bin\bash.exe --login -o pipefail {0}'
-      env:
-        CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
-        CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
+      shell: powershell
       run: |
-        bash "$(cygpath -u "$GITHUB_WORKSPACE" | tr -d '\r')/mlc-r2-downloader.sh" -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri || if [ $? -eq 100 ]; then echo "[PASS] Cygwin debug mode passed (exit 100)"; exit 0; else echo "[FAIL] Cygwin debug mode failed with exit code $?"; exit 1; fi
+        $env:CF_ACCESS_CLIENT_ID = "${{ steps.fetch-secrets.outputs.client-id }}"
+        $env:CF_ACCESS_CLIENT_SECRET = "${{ steps.fetch-secrets.outputs.client-secret }}"
+        $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
+        $repoPath = $repoPath.ToLower()
+        C:\cygwin64\bin\bash.exe --login -c "bash '$repoPath/mlc-r2-downloader.sh' -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri; exit_code=`$?; if [ `"`$exit_code`" -ne 100 ]; then echo '[FAIL] Wrong exit code: `$exit_code'; exit 1; else echo '[PASS] Correct exit code 100 received.'; fi"
       
     - name: Test script in Cygwin with service account and testing mode
-      shell: 'C:\cygwin64\bin\bash.exe --login -eo pipefail {0}'
-      env:
-        CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
-        CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
+      shell: powershell
       run: |
-        bash "$(cygpath -u "$GITHUB_WORKSPACE" | tr -d '\r')/mlc-r2-downloader.sh" -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri && echo "[PASS] Cygwin service account test PASSED!" || { echo "[FAIL] Cygwin service account test failed with exit code: $?"; exit 1; }
+        $env:CF_ACCESS_CLIENT_ID = "${{ steps.fetch-secrets.outputs.client-id }}"
+        $env:CF_ACCESS_CLIENT_SECRET = "${{ steps.fetch-secrets.outputs.client-secret }}"
+        $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
+        $repoPath = $repoPath.ToLower()
+        C:\cygwin64\bin\bash.exe --login -c "bash '$repoPath/mlc-r2-downloader.sh' -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri && echo '[PASS] Cygwin service account test PASSED!'"
