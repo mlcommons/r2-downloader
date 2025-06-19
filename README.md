@@ -44,9 +44,10 @@ Where `<URL>` is the path to a dataset metadata file (*.uri) in a R2 bucket. Thi
 The downloader supports several options:
 
 - `-d <download-path>` - Specify download directory (defaults to dataset name)
-- `-x` - Debug mode to see parsed URL components
 - `-h` - Show help message
-
+- `-s` - Use service account credentials for authentication (requires CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET environment variables)
+- `-t` - Testing mode for running automated tests of the script with service account credentials
+- `-x` - Debug mode to see parsed URL components and detected system info
 
 ## Cygwin + Wget Installer
 
