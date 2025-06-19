@@ -1,17 +1,13 @@
-name: Test R2 Downloader
+name: Test R2 Downloader & Cygwin + Wget Installer
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ dev ]
-    paths:
-      - 'mlc-r2-downloader.sh'
-      - '.github/workflows/test-downloader.yml'
   pull_request_target:
     types: [opened,closed,synchronize]
     branches: [ main ]
     paths:
       - 'mlc-r2-downloader.sh'
+      - 'cygwin-wget-installer.bat'
       - '.github/workflows/test-downloader.yml'
 
 # Prevent multiple runs from the same PR
@@ -203,7 +199,7 @@ jobs:
         echo "client-secret=$CF_ACCESS_CLIENT_SECRET" >> $env:GITHUB_OUTPUT
       shell: powershell
       
-    - name: Install Cygwin using installer
+    - name: Install Cygwin+Wget using installer
       run: |
         # Run the cygwin-wget-installer.bat to test the installer and install Cygwin
         Write-Host "Testing and running cygwin-wget-installer.bat..."
