@@ -152,3 +152,94 @@ jobs:
     - name: Test script in WSL with service account and testing mode
       run: |
         wsl bash -c 'export CF_ACCESS_CLIENT_ID="${{ steps.fetch-secrets.outputs.client-id }}"; export CF_ACCESS_CLIENT_SECRET="${{ steps.fetch-secrets.outputs.client-secret }}"; bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri'
+
+  test-windows-cygwin:
+    runs-on: windows-2025
+    environment: testing
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Configure git for Unix line endings
+      run: |
+        # Re-checkout files with Unix line endings
+        git config core.autocrlf false
+        git rm --cached -rf .
+        git reset --hard HEAD
+      shell: powershell
+      
+    - name: Install 1Password CLI
+      run: |
+        # Install 1Password CLI using winget with non-interactive flags
+        winget install 1password-cli --accept-source-agreements --accept-package-agreements
+        
+        # Refresh environment variables to pick up PATH changes
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
+        
+        # Test that the installation worked
+        op --version
+      shell: powershell
+      
+    - name: Configure 1Password and fetch secrets
+      id: fetch-secrets
+      run: |
+        # Set service account token
+        $Env:OP_SERVICE_ACCOUNT_TOKEN = "${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}"
+        
+        # Refresh PATH to ensure op command is available
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User") 
+        
+        # Verify service account configuration
+        op user get --me
+        
+        # Fetch secrets using op read
+        $CF_ACCESS_CLIENT_ID = op read "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
+        $CF_ACCESS_CLIENT_SECRET = op read "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
+        
+        # Export as step outputs
+        echo "client-id=$CF_ACCESS_CLIENT_ID" >> $env:GITHUB_OUTPUT
+        echo "client-secret=$CF_ACCESS_CLIENT_SECRET" >> $env:GITHUB_OUTPUT
+      shell: powershell
+      
+    - name: Install Cygwin using installer
+      run: |
+        # Run the cygwin-wget-installer.bat to test the installer and install Cygwin
+        Write-Host "Testing and running cygwin-wget-installer.bat..."
+        .\cygwin-wget-installer.bat
+        
+        # Verify Cygwin installation
+        if (Test-Path "C:\cygwin64\bin\bash.exe") {
+          Write-Host "[PASS] Cygwin installation successful"
+        } else {
+          Write-Host "[FAIL] Cygwin installation failed"
+          exit 1
+        }
+      shell: powershell
+      
+    - name: Test script in Cygwin with debug mode
+      run: |
+        # Run the script and capture the actual exit code
+        $output = C:\cygwin64\bin\bash.exe -c 'export CF_ACCESS_CLIENT_ID="${{ steps.fetch-secrets.outputs.client-id }}"; export CF_ACCESS_CLIENT_SECRET="${{ steps.fetch-secrets.outputs.client-secret }}"; bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri'
+        $exitCode = $LASTEXITCODE
+        
+        # Display the debug output with proper line breaks
+        Write-Host "Debug output:"
+        $output | ForEach-Object { Write-Host $_ }
+        Write-Host "Script exit code: $exitCode"
+        
+        if ($exitCode -eq 100) {
+          Write-Host "[PASS] Cygwin Debug mode test PASSED (expected exit code 100)"
+          exit 0
+        } else {
+          Write-Host "[FAIL] Cygwin Debug mode test FAILED (unexpected exit code: $exitCode)"
+          exit 1
+        }
+      shell: powershell
+      
+    - name: Test script in Cygwin with service account and testing mode
+      run: |
+        # Run the script with service account and testing mode
+        C:\cygwin64\bin\bash.exe -c 'export CF_ACCESS_CLIENT_ID="${{ steps.fetch-secrets.outputs.client-id }}"; export CF_ACCESS_CLIENT_SECRET="${{ steps.fetch-secrets.outputs.client-secret }}"; bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri'
+      shell: powershell
