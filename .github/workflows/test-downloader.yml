@@ -234,13 +234,18 @@ jobs:
         
         # Debug: Check environment and working directory
         Write-Host "Debugging Cygwin environment:"
-        $debug_output = C:\cygwin64\bin\bash.exe --login -c 'pwd; echo "PATH: $PATH"; which wget; ls -la "$PWD"'
+        $debug_output = C:\cygwin64\bin\bash.exe --login -c 'pwd; echo "PATH: $PATH"; which wget'
         Write-Host $debug_output
         
-        # Get the current working directory in Cygwin format
-        $currentDir = (Get-Location).Path -replace '^([A-Z]):', '/cygdrive/$1' -replace '\\', '/'
+                        # Get the current working directory in Cygwin format  
+        $currentDir = ((Get-Location).Path -replace '^([A-Z]):', '/cygdrive/$1' -replace '\\', '/').ToLower()
         Write-Host "Current Windows directory: $(Get-Location)"
         Write-Host "Cygwin format: $currentDir"
+        
+        # Debug: Check if environment variables are being passed correctly
+        Write-Host "Testing environment variable passing:"
+        $env_test = C:\cygwin64\bin\bash.exe --login -c "cd '$currentDir'; export CF_ACCESS_CLIENT_ID='${{ steps.fetch-secrets.outputs.client-id }}'; export CF_ACCESS_CLIENT_SECRET='${{ steps.fetch-secrets.outputs.client-secret }}'; echo 'CLIENT_ID length:' `${#CF_ACCESS_CLIENT_ID}; echo 'CLIENT_SECRET length:' `${#CF_ACCESS_CLIENT_SECRET}"
+        Write-Host $env_test
         
         $output = C:\cygwin64\bin\bash.exe --login -c "cd '$currentDir'; export CF_ACCESS_CLIENT_ID='${{ steps.fetch-secrets.outputs.client-id }}'; export CF_ACCESS_CLIENT_SECRET='${{ steps.fetch-secrets.outputs.client-secret }}'; bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri"
         $exitCode = $LASTEXITCODE
@@ -265,7 +270,7 @@ jobs:
         $env:PATH = "C:\cygwin64\bin;" + $env:PATH
         
         # Get the current working directory in Cygwin format
-        $currentDir = (Get-Location).Path -replace '^([A-Z]):', '/cygdrive/$1' -replace '\\', '/'
+        $currentDir = ((Get-Location).Path -replace '^([A-Z]):', '/cygdrive/$1' -replace '\\', '/').ToLower()
         
         C:\cygwin64\bin\bash.exe --login -c "cd '$currentDir'; export CF_ACCESS_CLIENT_ID='${{ steps.fetch-secrets.outputs.client-id }}'; export CF_ACCESS_CLIENT_SECRET='${{ steps.fetch-secrets.outputs.client-secret }}'; bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri"
       shell: powershell
