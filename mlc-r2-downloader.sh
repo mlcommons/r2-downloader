@@ -220,7 +220,7 @@ install_cloudflared() {
     
     # Download cloudflared
     echo "Downloading cloudflared..."
-    wget -O "$ARCHIVE_NAME" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-${OS_NAME}-${ARCH}${FILE_EXT}" || { 
+    wget -q -O "$ARCHIVE_NAME" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-${OS_NAME}-${ARCH}${FILE_EXT}" || { 
         echo "Error: Failed to download cloudflared. You may need to install it manually." >&2
         exit 1
     }
