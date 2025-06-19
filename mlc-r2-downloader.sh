@@ -220,7 +220,7 @@ install_cloudflared() {
     
     # Download cloudflared
     echo "Downloading cloudflared..."
-    wget -O "$ARCHIVE_NAME" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-${OS_NAME}-${ARCH}${FILE_EXT}" || { 
+    curl -L "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-${OS_NAME}-${ARCH}${FILE_EXT}" -o "$ARCHIVE_NAME" || { 
         echo "Error: Failed to download cloudflared. You may need to install it manually." >&2
         exit 1
     }
@@ -594,17 +594,7 @@ check_token_expiration() {
             
             # Test if token is still valid by trying to access the protected resource
             local http_code
-            # Use wget to check token validity - capture HTTP status from headers
-            local response
-            response=$(wget --header="cf-access-token: $TOKEN" --timeout=60 --tries=3 --save-headers --quiet -O - "$url_dataset_info" 2>&1)
-            if echo "$response" | grep -q "HTTP/[0-9.]* 200"; then
-                http_code="200"
-            elif echo "$response" | grep -q "HTTP/[0-9.]* 302"; then
-                http_code="302"
-            else
-                # Extract status code if available
-                http_code=$(echo "$response" | grep "HTTP/[0-9.]*" | tail -1 | sed 's/HTTP\/[0-9.]* \([0-9]*\).*/\1/' || echo "unknown")
-            fi
+            http_code=$(curl -H "cf-access-token: $TOKEN" --max-time 60 --retry 3 --retry-connrefused --silent --write-out "%{http_code}" --output /dev/null "$url_dataset_info" 2>/dev/null)
             
             if [ "$http_code" = "200" ]; then
                 if [ $poll_count -lt $max_polls ]; then
