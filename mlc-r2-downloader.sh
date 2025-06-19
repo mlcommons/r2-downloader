@@ -447,7 +447,7 @@ if [[ $SERVICE_ACCOUNT == 1 ]]; then
     echo "Using service account for authentication..."
 
     # Retrieve response headers so we can extract the CF_Authorization cookie
-    if [[ "$OS" == "cygwin" ]]; then
+    if [[ "$OS" == "test" ]]; then
         # In Cygwin use wget to avoid Windows curl PATH issues
         headers=$(wget --header="CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
                        --header="CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
