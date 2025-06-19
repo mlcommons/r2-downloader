@@ -249,7 +249,9 @@ jobs:
         
         # Test the actual curl command that's failing in service account mode
         Write-Host "Testing curl authentication directly:"
-        $curl_test = C:\cygwin64\bin\bash.exe --login -c "cd '$currentDir'; export CF_ACCESS_CLIENT_ID='${{ steps.fetch-secrets.outputs.client-id }}'; export CF_ACCESS_CLIENT_SECRET='${{ steps.fetch-secrets.outputs.client-secret }}'; curl -s -D - -H `"CF-Access-Client-Id: `$CF_ACCESS_CLIENT_ID`" -H `"CF-Access-Client-Secret: `$CF_ACCESS_CLIENT_SECRET`" https://auth-test.mlcommons-storage.org/metadata/dataset.uri -o /dev/null"
+        $clientId = "${{ steps.fetch-secrets.outputs.client-id }}"
+        $clientSecret = "${{ steps.fetch-secrets.outputs.client-secret }}"
+        $curl_test = C:\cygwin64\bin\bash.exe --login -c "cd '$currentDir'; curl -s -D - -H 'CF-Access-Client-Id: $clientId' -H 'CF-Access-Client-Secret: $clientSecret' https://auth-test.mlcommons-storage.org/metadata/dataset.uri -o /dev/null"
         Write-Host "Curl test output:"
         $curl_test | ForEach-Object { Write-Host "  $_" }
         Write-Host "Curl exit code: $LASTEXITCODE"
@@ -283,7 +285,9 @@ jobs:
         Write-Host "[INFO] Testing service account authentication in Cygwin:"
         
         # Test the service account authentication with better error handling
-        $output = C:\cygwin64\bin\bash.exe --login -c "cd '$currentDir'; export CF_ACCESS_CLIENT_ID='${{ steps.fetch-secrets.outputs.client-id }}'; export CF_ACCESS_CLIENT_SECRET='${{ steps.fetch-secrets.outputs.client-secret }}'; bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri"
+        $clientId = "${{ steps.fetch-secrets.outputs.client-id }}"
+        $clientSecret = "${{ steps.fetch-secrets.outputs.client-secret }}"
+        $output = C:\cygwin64\bin\bash.exe --login -c "cd '$currentDir'; export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret'; bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri"
         $exitCode = $LASTEXITCODE
         
         Write-Host "Service account test output:"
