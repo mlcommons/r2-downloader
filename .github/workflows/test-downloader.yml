@@ -60,9 +60,9 @@ jobs:
         exit_code=$?
         
         if [ $exit_code -eq 100 ]; then
-          echo "✅ Debug mode test PASSED (expected exit code 100)"
+          echo "[PASS] Debug mode test PASSED (expected exit code 100)"
         else
-          echo "❌ Debug mode test FAILED (unexpected exit code: $exit_code)"
+          echo "[FAIL] Debug mode test FAILED (unexpected exit code: $exit_code)"
           exit 1
         fi
         
@@ -138,10 +138,10 @@ jobs:
         Write-Host "Script exit code: $exitCode"
         
         if ($exitCode -eq 100) {
-          Write-Host "✅ WSL Debug mode test PASSED (expected exit code 100)"
+          Write-Host "[PASS] WSL Debug mode test PASSED (expected exit code 100)"
           exit 0
         } else {
-          Write-Host "❌ WSL Debug mode test FAILED (unexpected exit code: $exitCode)"
+          Write-Host "[FAIL] WSL Debug mode test FAILED (unexpected exit code: $exitCode)"
           exit 1
         }
       shell: powershell
