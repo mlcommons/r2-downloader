@@ -233,6 +233,8 @@ jobs:
         CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
         CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
       run: |
+        # Enable Cygwin Bash to ignore Windows-style CRLF line endings
+        set -o igncr
         set +e
         bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri
         exit_code=$?
@@ -254,7 +256,9 @@ jobs:
         echo "Using wget: $(wget --version | head -1)"
         
         # Test the service account authentication with the fixed script
-        set +e  # Don't exit on error so we can handle it properly
+        # Enable Cygwin Bash to ignore Windows-style CRLF line endings
+        set -o igncr
+        set +e
         bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri
         exit_code=$?
         
