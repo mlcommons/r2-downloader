@@ -233,6 +233,10 @@ jobs:
         CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
         CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
       run: |
+        # Convert GITHUB_WORKSPACE to a Cygwin path and cd into repo
+        repo_path=$(cygpath -u "$GITHUB_WORKSPACE")
+        cd "$repo_path"
+
         # Run downloader in debug mode; it should exit 100
         bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri
         exit_code=$?
@@ -249,6 +253,10 @@ jobs:
         CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
         CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
       run: |
+        # Convert GITHUB_WORKSPACE to a Cygwin path and cd into repo
+        repo_path=$(cygpath -u "$GITHUB_WORKSPACE")
+        cd "$repo_path"
+
         echo "[INFO] Testing service account authentication in Cygwin using proper Cygwin shell:"
         echo "Working directory: $(pwd)"
         echo "Using wget: $(wget --version | head -1)"
