@@ -232,12 +232,17 @@ jobs:
         # Set up Cygwin environment and run the script
         $env:PATH = "C:\cygwin64\bin;" + $env:PATH
         
-        # Debug: Check environment
+        # Debug: Check environment and working directory
         Write-Host "Debugging Cygwin environment:"
-        $debug_output = C:\cygwin64\bin\bash.exe --login -c 'pwd; echo "PATH: $PATH"; which wget; ls -la /usr/bin/wget*'
+        $debug_output = C:\cygwin64\bin\bash.exe --login -c 'pwd; echo "PATH: $PATH"; which wget; ls -la "$PWD"'
         Write-Host $debug_output
         
-        $output = C:\cygwin64\bin\bash.exe --login -c 'export CF_ACCESS_CLIENT_ID="${{ steps.fetch-secrets.outputs.client-id }}"; export CF_ACCESS_CLIENT_SECRET="${{ steps.fetch-secrets.outputs.client-secret }}"; bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri'
+        # Get the current working directory in Cygwin format
+        $currentDir = (Get-Location).Path -replace '^([A-Z]):', '/cygdrive/$1' -replace '\\', '/'
+        Write-Host "Current Windows directory: $(Get-Location)"
+        Write-Host "Cygwin format: $currentDir"
+        
+        $output = C:\cygwin64\bin\bash.exe --login -c "cd '$currentDir'; export CF_ACCESS_CLIENT_ID='${{ steps.fetch-secrets.outputs.client-id }}'; export CF_ACCESS_CLIENT_SECRET='${{ steps.fetch-secrets.outputs.client-secret }}'; bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri"
         $exitCode = $LASTEXITCODE
         
         # Display the debug output with proper line breaks
@@ -258,5 +263,9 @@ jobs:
       run: |
         # Set up Cygwin environment and run the script with service account and testing mode
         $env:PATH = "C:\cygwin64\bin;" + $env:PATH
-        C:\cygwin64\bin\bash.exe --login -c 'cd /cygdrive/d/a/r2-downloader/r2-downloader; export CF_ACCESS_CLIENT_ID="${{ steps.fetch-secrets.outputs.client-id }}"; export CF_ACCESS_CLIENT_SECRET="${{ steps.fetch-secrets.outputs.client-secret }}"; bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri'
+        
+        # Get the current working directory in Cygwin format
+        $currentDir = (Get-Location).Path -replace '^([A-Z]):', '/cygdrive/$1' -replace '\\', '/'
+        
+        C:\cygwin64\bin\bash.exe --login -c "cd '$currentDir'; export CF_ACCESS_CLIENT_ID='${{ steps.fetch-secrets.outputs.client-id }}'; export CF_ACCESS_CLIENT_SECRET='${{ steps.fetch-secrets.outputs.client-secret }}'; bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri"
       shell: powershell
