@@ -85,8 +85,11 @@ jobs:
       
     - name: Install 1Password CLI
       run: |
-        # Install 1Password CLI using winget
-        winget install 1password-cli
+        # Install 1Password CLI using winget with non-interactive flags
+        winget install 1password-cli --accept-source-agreements --accept-package-agreements
+        
+        # Refresh environment variables to pick up PATH changes
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
         
         # Test that the installation worked
         op --version
