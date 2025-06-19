@@ -429,54 +429,67 @@ if [ -n "$BROWSER_OPENER" ]; then
     fi
 fi
 
-echo "Logging in to Cloudflare Access at ${url_dataset_info}..."
+# Function to get authentication token
+get_token() {
+    echo "Logging in to Cloudflare Access at ${url_dataset_info}..."
 
-# Validate service-account environment variables if the -s flag is set
-if [[ $SERVICE_ACCOUNT == 1 ]]; then
-    if [[ -z "$CF_ACCESS_CLIENT_ID" || -z "$CF_ACCESS_CLIENT_SECRET" ]]; then
-        echo "Error: -s specified but CF_ACCESS_CLIENT_ID and/or CF_ACCESS_CLIENT_SECRET are not set in the environment." >&2
-        echo "Export both variables then re-run the script, e.g.:" >&2
-        echo "  export CF_ACCESS_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.access" >&2
-        echo "  export CF_ACCESS_CLIENT_SECRET=yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy" >&2
-        exit 1
+    # Validate service-account environment variables if the -s flag is set
+    if [[ $SERVICE_ACCOUNT == 1 ]]; then
+        if [[ -z "$CF_ACCESS_CLIENT_ID" || -z "$CF_ACCESS_CLIENT_SECRET" ]]; then
+            echo "Error: -s specified but CF_ACCESS_CLIENT_ID and/or CF_ACCESS_CLIENT_SECRET are not set in the environment." >&2
+            echo "Export both variables then re-run the script, e.g.:" >&2
+            echo "  export CF_ACCESS_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.access" >&2
+            echo "  export CF_ACCESS_CLIENT_SECRET=yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy" >&2
+            exit 1
+        fi
     fi
-fi
 
-# If using a service account, get the access token by accessing the application and dumping the protocol headers
-if [[ $SERVICE_ACCOUNT == 1 ]]; then
-    echo "Using service account for authentication..."
+    # If using a service account, get the access token by accessing the application and dumping the protocol headers
+    if [[ $SERVICE_ACCOUNT == 1 ]]; then
+        echo "Using service account for authentication..."
 
-    # Retrieve response headers so we can extract the CF_Authorization cookie
-    headers=$(wget --header="CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
-                   --header="CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
-                   --save-headers --quiet -O - "$url_dataset_info") || {
-        echo "Error: Failed to authenticate with Cloudflare Access." >&2
-        echo "Please check your network connection and try again." >&2
-        exit 1
-    }
+        # Retrieve response headers so we can extract the CF_Authorization cookie
+        headers=$(wget --header="CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+                       --header="CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+                       --save-headers --quiet -O - "$url_dataset_info") || {
+            echo "Error: Failed to authenticate with Cloudflare Access." >&2
+            echo "Please check your network connection and try again." >&2
+            exit 1
+        }
 
-    # Isolate the JWT contained in the CF_Authorization cookie
-    # 1. remove any carriage returns; 2. find the set-cookie header; 3. strip everything
-    #    except the value portion before the first semicolon.
-    TOKEN=$(echo "$headers" | tr -d '\r' | grep -i '^[[:space:]]*set-cookie:[[:space:]]*CF_Authorization=' \
-                 | head -n1 | sed -e 's/^.*CF_Authorization=//' -e 's/;.*$//')
+        # Isolate the JWT contained in the CF_Authorization cookie
+        # 1. remove any carriage returns; 2. find the set-cookie header; 3. strip everything
+        #    except the value portion before the first semicolon.
+        TOKEN=$(echo "$headers" | tr -d '\r' | grep -i '^[[:space:]]*set-cookie:[[:space:]]*CF_Authorization=' \
+                     | head -n1 | sed -e 's/^.*CF_Authorization=//' -e 's/;.*$//')
 
-    if [[ -z "$TOKEN" ]]; then
-        echo "Error: Unable to extract CF_Authorization token from response headers." >&2
-        exit 1
+        if [[ -z "$TOKEN" ]]; then
+            echo "Error: Unable to extract CF_Authorization token from response headers." >&2
+            exit 1
+        fi
+    # If not using a service account, get the access token using cloudflared
+    else
+        # Log in to Cloudflare Access, showing full output except removing the token block.
+        # NOTE: the "sed" command omits the token from the console output
+        cloudflared access login "${url_dataset_info}" 2>&1 | sed '/Successfully fetched your token:/ { N; N; d; }' || { 
+            echo "Error: Failed to authenticate with Cloudflare Access." >&2
+            echo "Please check your network connection and try again." >&2
+            exit 1
+        }
+        
+        # Download the access token after authentication
+        TOKEN=`cloudflared access token --app="$url_dataset_info"` || { 
+            echo "Error: Failed to get access token." >&2
+            echo "Please re-run the script to re-authenticate." >&2
+            exit 1
+        }
     fi
-# If not using a service account, get the access token using cloudflared
-else
-    # Log in to Cloudflare Access, showing full output except removing the token block.
-    # NOTE: the "sed" command omits the token from the console output
-    cloudflared access login "${url_dataset_info}" 2>&1 | sed '/Successfully fetched your token:/ { N; N; d; }' || { 
-        echo "Error: Failed to authenticate with Cloudflare Access." >&2
-        echo "Please check your network connection and try again." >&2
-        exit 1
-    }
-fi
 
-echo "Authentication successful!"
+    echo "Authentication successful!"
+}
+
+# Get authentication token
+get_token
 
 # Function to pluralize a word based on count
 pluralize() {
@@ -624,30 +637,12 @@ check_token_expiration() {
         fi
         
         # Run authentication since token should now be invalid
-        echo "Logging in to Cloudflare Access at ${url_dataset_info}..."
-        cloudflared access login "${url_dataset_info}" 2>&1 | sed '/Successfully fetched your token:/ { N; N; d; }' || { 
-            echo "Error: Failed to authenticate with Cloudflare Access" >&2 
-            exit 1 
-        }
-        
-        # Get new token
-        TOKEN=`cloudflared access token --app="$url_dataset_info"` || { echo "Error: Failed to get access token" >&2; exit 1; }
+        get_token
         
         # Check the new token
         check_token_expiration "$TOKEN"
     fi
 }
-
-# If not using a service account, get the access token using cloudflared
-if [[ $SERVICE_ACCOUNT != 1 ]]; then
-    # Download the access token after authentication
-    TOKEN=`cloudflared access token --app="$url_dataset_info"` || { 
-        echo "Error: Failed to get access token." >&2
-        echo "Please re-run the script to re-authenticate." >&2
-        exit 1
-    }
-
-fi
 
 # Check token expiration time if using cloudflared
 if [[ $USE_CLOUDFLARED == 1 ]]; then
