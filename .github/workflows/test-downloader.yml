@@ -228,14 +228,12 @@ jobs:
       shell: powershell
       
     - name: Test script in Cygwin with debug mode
-      shell: 'C:\cygwin64\bin\bash.exe --login -eo pipefail {0}'
+      shell: 'C:\cygwin64\bin\bash.exe --login -o pipefail {0}'
       env:
         CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
         CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
       run: |
-        # Enable Cygwin Bash to ignore Windows-style CRLF line endings
-        set -o igncr
-        set +e
+        # Run downloader in debug mode; it should exit 100
         bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri
         exit_code=$?
         if [ "$exit_code" -eq 100 ]; then
@@ -256,16 +254,12 @@ jobs:
         echo "Using wget: $(wget --version | head -1)"
         
         # Test the service account authentication with the fixed script
-        # Enable Cygwin Bash to ignore Windows-style CRLF line endings
-        set -o igncr
-        set +e
         bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri
         exit_code=$?
         
         if [ $exit_code -eq 0 ]; then
           echo "[PASS] Cygwin service account test PASSED!"
-                 else
-           echo "[INFO] Cygwin service account test failed with exit code: $exit_code"
-           echo "[INFO] Switching to wget should have resolved PATH issues - investigating further may be needed"
-           echo "[INFO] Core functionality (installer, dependencies, script execution) has been verified"
-         fi
+        else
+          echo "[FAIL] Cygwin service account test failed with exit code: $exit_code"
+          exit 1
+        fi
