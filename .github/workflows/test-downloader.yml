@@ -131,7 +131,20 @@ jobs:
         
     - name: Test script in WSL with debug mode
       run: |
-        wsl bash -c 'export CF_ACCESS_CLIENT_ID="${{ steps.fetch-secrets.outputs.client-id }}"; export CF_ACCESS_CLIENT_SECRET="${{ steps.fetch-secrets.outputs.client-secret }}"; set +e; bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri; exit_code=$?; echo "Script exit code: $exit_code"; if [ "$exit_code" -eq 100 ]; then echo "✅ WSL Debug mode test PASSED (expected exit code 100)"; else echo "❌ WSL Debug mode test FAILED (unexpected exit code: $exit_code)"; exit 1; fi'
+        # Run the script and capture result
+        $output = wsl bash -c 'export CF_ACCESS_CLIENT_ID="${{ steps.fetch-secrets.outputs.client-id }}"; export CF_ACCESS_CLIENT_SECRET="${{ steps.fetch-secrets.outputs.client-secret }}"; bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri; echo "EXIT_CODE:$?"'
+        
+        # Extract and check exit code
+        $exitCode = ($output | Select-String "EXIT_CODE:" | ForEach-Object { $_.ToString().Split(":")[1] })
+        Write-Host "Script exit code: $exitCode"
+        
+        if ($exitCode -eq "100") {
+          Write-Host "✅ WSL Debug mode test PASSED (expected exit code 100)"
+        } else {
+          Write-Host "❌ WSL Debug mode test FAILED (unexpected exit code: $exitCode)"
+          exit 1
+        }
+      shell: powershell
         
     - name: Test script in WSL with service account and testing mode
       run: |
