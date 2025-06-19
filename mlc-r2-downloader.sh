@@ -429,54 +429,67 @@ if [ -n "$BROWSER_OPENER" ]; then
     fi
 fi
 
-echo "Logging in to Cloudflare Access at ${url_dataset_info}..."
+# Function to get authentication token
+get_token() {
+    echo "Logging in to Cloudflare Access at ${url_dataset_info}..."
 
-# Validate service-account environment variables if the -s flag is set
-if [[ $SERVICE_ACCOUNT == 1 ]]; then
-    if [[ -z "$CF_ACCESS_CLIENT_ID" || -z "$CF_ACCESS_CLIENT_SECRET" ]]; then
-        echo "Error: -s specified but CF_ACCESS_CLIENT_ID and/or CF_ACCESS_CLIENT_SECRET are not set in the environment." >&2
-        echo "Export both variables then re-run the script, e.g.:" >&2
-        echo "  export CF_ACCESS_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.access" >&2
-        echo "  export CF_ACCESS_CLIENT_SECRET=yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy" >&2
-        exit 1
+    # Validate service-account environment variables if the -s flag is set
+    if [[ $SERVICE_ACCOUNT == 1 ]]; then
+        if [[ -z "$CF_ACCESS_CLIENT_ID" || -z "$CF_ACCESS_CLIENT_SECRET" ]]; then
+            echo "Error: -s specified but CF_ACCESS_CLIENT_ID and/or CF_ACCESS_CLIENT_SECRET are not set in the environment." >&2
+            echo "Export both variables then re-run the script, e.g.:" >&2
+            echo "  export CF_ACCESS_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.access" >&2
+            echo "  export CF_ACCESS_CLIENT_SECRET=yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy" >&2
+            exit 1
+        fi
     fi
-fi
 
-# If using a service account, get the access token by accessing the application and dumping the protocol headers
-if [[ $SERVICE_ACCOUNT == 1 ]]; then
-    echo "Using service account for authentication..."
+    # If using a service account, get the access token by accessing the application and dumping the protocol headers
+    if [[ $SERVICE_ACCOUNT == 1 ]]; then
+        echo "Using service account for authentication..."
 
-    # Retrieve response headers so we can extract the CF_Authorization cookie
-    headers=$(wget --header="CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
-                   --header="CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
-                   --save-headers --quiet -O - "$url_dataset_info") || {
-        echo "Error: Failed to authenticate with Cloudflare Access." >&2
-        echo "Please check your network connection and try again." >&2
-        exit 1
-    }
+        # Retrieve response headers so we can extract the CF_Authorization cookie
+        headers=$(wget --header="CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+                       --header="CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+                       --save-headers --quiet -O - "$url_dataset_info") || {
+            echo "Error: Failed to authenticate with Cloudflare Access." >&2
+            echo "Please check your network connection and try again." >&2
+            exit 1
+        }
 
-    # Isolate the JWT contained in the CF_Authorization cookie
-    # 1. remove any carriage returns; 2. find the set-cookie header; 3. strip everything
-    #    except the value portion before the first semicolon.
-    TOKEN=$(echo "$headers" | tr -d '\r' | grep -i '^[[:space:]]*set-cookie:[[:space:]]*CF_Authorization=' \
-                 | head -n1 | sed -e 's/^.*CF_Authorization=//' -e 's/;.*$//')
+        # Isolate the JWT contained in the CF_Authorization cookie
+        # 1. remove any carriage returns; 2. find the set-cookie header; 3. strip everything
+        #    except the value portion before the first semicolon.
+        TOKEN=$(echo "$headers" | tr -d '\r' | grep -i '^[[:space:]]*set-cookie:[[:space:]]*CF_Authorization=' \
+                     | head -n1 | sed -e 's/^.*CF_Authorization=//' -e 's/;.*$//')
 
-    if [[ -z "$TOKEN" ]]; then
-        echo "Error: Unable to extract CF_Authorization token from response headers." >&2
-        exit 1
+        if [[ -z "$TOKEN" ]]; then
+            echo "Error: Unable to extract CF_Authorization token from response headers." >&2
+            exit 1
+        fi
+    # If not using a service account, get the access token using cloudflared
+    else
+        # Log in to Cloudflare Access, showing full output except removing the token block.
+        # NOTE: the "sed" command omits the token from the console output
+        cloudflared access login "${url_dataset_info}" 2>&1 | sed '/Successfully fetched your token:/ { N; N; d; }' || { 
+            echo "Error: Failed to authenticate with Cloudflare Access." >&2
+            echo "Please check your network connection and try again." >&2
+            exit 1
+        }
+        
+        # Download the access token after authentication
+        TOKEN=`cloudflared access token --app="$url_dataset_info"` || { 
+            echo "Error: Failed to get access token." >&2
+            echo "Please re-run the script to re-authenticate." >&2
+            exit 1
+        }
     fi
-# If not using a service account, get the access token using cloudflared
-else
-    # Log in to Cloudflare Access, showing full output except removing the token block.
-    # NOTE: the "sed" command omits the token from the console output
-    cloudflared access login "${url_dataset_info}" 2>&1 | sed '/Successfully fetched your token:/ { N; N; d; }' || { 
-        echo "Error: Failed to authenticate with Cloudflare Access." >&2
-        echo "Please check your network connection and try again." >&2
-        exit 1
-    }
-fi
 
-echo "Authentication successful!"
+    echo "Authentication successful!"
+}
+
+# Get authentication token
+get_token
 
 # Function to pluralize a word based on count
 pluralize() {
@@ -531,6 +544,60 @@ get_jwt_expiration() {
     echo "$exp"
 }
 
+# Function to confirm token invalidation
+confirm_token_invalidation() {
+    local max_polls=$1
+    local poll_interval=$2
+    local full_confirmation=$3  # true = full confirmation for re-auth, false = testing only
+    local poll_count=0
+    local max_minutes=$((max_polls * poll_interval / 60))  # Calculate maximum minutes of polling
+    
+    while [ $poll_count -lt $max_polls ]; do
+        poll_count=$((poll_count + 1))
+        echo "Checking token status (attempt $poll_count of $max_polls)..."
+        
+        # Test if token is still valid by trying to access the protected resource
+        local http_code
+        http_code=$(curl -H "cf-access-token: $TOKEN" --max-time 60 --retry 1 --retry-connrefused --silent --write-out "%{http_code}" --output /dev/null "$url_dataset_info" 2>/dev/null)
+        
+        if [ "$http_code" = "200" ]; then
+            echo "Token still valid (HTTP $http_code)"
+            if [ $poll_count -lt $max_polls ]; then
+                echo "Waiting $poll_interval seconds before next check..."
+                sleep $poll_interval
+            elif [[ $full_confirmation == true ]]; then
+                echo "Token still valid after final attempt."
+            fi
+        elif [ "$http_code" = "302" ]; then
+            echo "Token invalidated! (HTTP $http_code - redirected to login)"
+            if [[ $full_confirmation == true ]]; then
+                echo "Starting authentication..."
+            fi
+            break
+        else
+            echo "HTTP response: $http_code"
+            if [[ $full_confirmation == true ]]; then
+                echo " - this may indicate a service issue" >&2
+            fi
+            
+            if [ $poll_count -lt $max_polls ]; then
+                echo "Waiting $poll_interval seconds before retrying..."
+                sleep $poll_interval
+            elif [[ $full_confirmation == true ]]; then
+                echo "Proceeding with authentication attempt anyway..."
+                break
+            fi
+        fi
+    done
+    
+    # Handle timeout case for full confirmation mode
+    if [[ $full_confirmation == true && $poll_count -ge $max_polls ]]; then
+        echo "Warning: Token may still be valid after $max_minutes minutes of waiting" >&2
+        echo "Try logging out again, checking for network issues, and re-running the script." >&2
+        exit 1
+    fi
+}
+
 # Function to check token expiration
 check_token_expiration() {
     local token=$1
@@ -561,9 +628,11 @@ check_token_expiration() {
     if [ $time_until_expiry -lt 259200 ]; then
         echo "Warning: Cloudflare Access token will expire in less than 3 days, which could cause the download to fail" >&2
         
-        # Skip re-authentication if using service account (even in testing mode) as service account tokens are newly generated on every run
-        if [[ $SERVICE_ACCOUNT == 1 ]]; then
-            echo "Service account detected - skipping automatic re-authentication" >&2
+        # In testing mode, do limited token invalidation testing and skip interactive parts
+        if [[ $TESTING_MODE == 1 ]]; then
+            echo "Testing mode: attempting limited token invalidation confirmation..."
+            confirm_token_invalidation 2 5 false  # 2 attempts, 5 second intervals, testing only
+            echo "Testing mode: completed token invalidation test"
             return
         fi
         
@@ -582,72 +651,15 @@ check_token_expiration() {
         
         # Token needs to be invalidated before re-authentication can be performed
         echo "Confirming token is invalidated..."
-        local poll_count=0
-        local max_polls=20
-        local poll_interval=15
-        local max_minutes=$((max_polls * poll_interval / 60))  # Calculate maximum minutes of polling
-        
-        while [ $poll_count -lt $max_polls ]; do
-            poll_count=$((poll_count + 1))
-            echo "Checking token status (attempt $poll_count of $max_polls)..."
-            
-            # Test if token is still valid by trying to access the protected resource
-            local http_code
-            http_code=$(curl -H "cf-access-token: $TOKEN" --max-time 60 --retry 3 --retry-connrefused --silent --write-out "%{http_code}" --output /dev/null "$url_dataset_info" 2>/dev/null)
-            
-            if [ "$http_code" = "200" ]; then
-                if [ $poll_count -lt $max_polls ]; then
-                    echo "Token still valid, waiting $poll_interval seconds before next check..."
-                    sleep $poll_interval
-                else
-                    echo "Token still valid after final attempt."
-                fi
-            elif [ "$http_code" = "302" ]; then
-                echo "Token invalidated! (HTTP $http_code - redirected to login) Starting authentication..."
-                break
-            else
-                echo "Unexpected HTTP response: $http_code - this may indicate a service issue" >&2
-                if [ $poll_count -lt $max_polls ]; then
-                    echo "Waiting $poll_interval seconds before retrying..."
-                    sleep $poll_interval
-                else
-                    echo "Proceeding with authentication attempt anyway..."
-                    break
-                fi
-            fi
-        done
-        
-        if [ $poll_count -ge $max_polls ]; then
-            echo "Warning: Token may still be valid after $max_minutes minutes of waiting" >&2
-            echo "Try logging out again, checking for network issues, and re-running the script." >&2
-            exit 1
-        fi
+        confirm_token_invalidation 20 15 true  # 20 attempts, 15 second intervals, full confirmation
         
         # Run authentication since token should now be invalid
-        echo "Logging in to Cloudflare Access at ${url_dataset_info}..."
-        cloudflared access login "${url_dataset_info}" 2>&1 | sed '/Successfully fetched your token:/ { N; N; d; }' || { 
-            echo "Error: Failed to authenticate with Cloudflare Access" >&2 
-            exit 1 
-        }
-        
-        # Get new token
-        TOKEN=`cloudflared access token --app="$url_dataset_info"` || { echo "Error: Failed to get access token" >&2; exit 1; }
+        get_token
         
         # Check the new token
         check_token_expiration "$TOKEN"
     fi
 }
-
-# If not using a service account, get the access token using cloudflared
-if [[ $SERVICE_ACCOUNT != 1 ]]; then
-    # Download the access token after authentication
-    TOKEN=`cloudflared access token --app="$url_dataset_info"` || { 
-        echo "Error: Failed to get access token." >&2
-        echo "Please re-run the script to re-authenticate." >&2
-        exit 1
-    }
-
-fi
 
 # Check token expiration time if using cloudflared
 if [[ $USE_CLOUDFLARED == 1 ]]; then
