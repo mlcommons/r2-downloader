@@ -21,6 +21,6 @@ Start-Process -FilePath "$env:USERPROFILE\Downloads\setup-x86_64.exe" `
 Write-Host "Cygwin installation complete. Launching terminal..."
 
 # Now safe to launch the terminal since installation is actually finished
-& "C:\cygwin64\bin\mintty.exe" /bin/bash
+& "C:\cygwin64\bin\mintty.exe" -
 
 } @Args

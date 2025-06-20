@@ -56,6 +56,6 @@ If you're on Windows and don't have WSL, you can use our cygwin+wget installer:
 1. **Download:** Get the installer from GitHub [here](https://github.com/mlcommons/r2-downloader/blob/main/cygwin-wget-installer.bat).
 2. **Install:** Double-click the downloaded file to run it. The installer is PowerShell wrapped in batch, which allows it to run natively on Windows. It will automatically install Cygwin and `wget`
 3. **Navigate:** When the installer finishes, it should launch the Cygwin terminal. To navigate to your Windows folders, use:
-   - `cd /cygwin/c/Users/YourUsername/Downloads` (for Downloads folder)
-   - `cd /cygwin/<drive-letter>/path/to/your/desired/folder` (for any other location)
+   - `cd /cygdrive/c/Users/YourUsername/Downloads` (for Downloads folder)
+   - `cd /cygdrive/<drive-letter>/path/to/your/desired/folder` (for any other location)
 4. **Run the downloader:** Once you're in your desired directory, run a downloader command.
