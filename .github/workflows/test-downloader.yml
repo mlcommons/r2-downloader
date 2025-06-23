@@ -2,6 +2,12 @@ name: Test R2 Downloader & Cygwin + Wget Installer
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ dev-no-auth ]
+    paths:
+      - 'mlc-r2-downloader.sh'
+      - 'cygwin-wget-installer.bat'
+      - '.github/workflows/test-downloader.yml'
   pull_request:
     types: [opened,closed,synchronize]
     branches: [ main ]
@@ -70,6 +76,11 @@ jobs:
         # Run script with service account and testing mode flags
         bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri
 
+    - name: Test script with no authentication required
+      run: |
+        # Run script with no authentication required
+        bash ./mlc-r2-downloader.sh -st -d test/dataset https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri
+        
   test-windows-wsl:
     runs-on: windows-2025
     environment: testing
@@ -80,14 +91,15 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Configure git for Unix line endings
+      shell: powershell
       run: |
         # Re-checkout files with Unix line endings
         git config core.autocrlf false
         git rm --cached -rf .
         git reset --hard HEAD
-      shell: powershell
-      
+        
     - name: Install 1Password CLI
+      shell: powershell
       run: |
         # Install 1Password CLI using winget with non-interactive flags
         winget install 1password-cli --accept-source-agreements --accept-package-agreements
@@ -97,10 +109,10 @@ jobs:
         
         # Test that the installation worked
         op --version
-      shell: powershell
       
     - name: Configure 1Password and fetch secrets
       id: fetch-secrets
+      shell: powershell
       run: |
         # Set service account token
         $Env:OP_SERVICE_ACCOUNT_TOKEN = "${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}"
@@ -122,7 +134,6 @@ jobs:
         # Export as step outputs
         echo "client-id=$CF_ACCESS_CLIENT_ID" >> $env:GITHUB_OUTPUT
         echo "client-secret=$CF_ACCESS_CLIENT_SECRET" >> $env:GITHUB_OUTPUT
-      shell: powershell
       
     - name: Setup WSL
       uses: Vampire/setup-wsl@v5
@@ -133,6 +144,7 @@ jobs:
       env:
         CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
         CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
+      shell: powershell
       run: |
         # Capture environment variables in PowerShell variables for proper expansion
         $clientId = $env:CF_ACCESS_CLIENT_ID
@@ -154,19 +166,24 @@ jobs:
           Write-Host "[FAIL] WSL Debug mode test FAILED (unexpected exit code: $exitCode)"
           exit 1
         }
-      shell: powershell
         
     - name: Test script in WSL with service account and testing mode
       env:
         CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
         CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
+      shell: powershell
       run: |
         # Capture environment variables in PowerShell variables for proper expansion
         $clientId = $env:CF_ACCESS_CLIENT_ID
         $clientSecret = $env:CF_ACCESS_CLIENT_SECRET
         
         wsl bash -c "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret'; bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri"
+
+    - name: Test script in WSL with no authentication required
       shell: powershell
+      run: |
+        # Run script with no authentication required
+        wsl bash -c "bash ./mlc-r2-downloader.sh -st -d test/dataset https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri"
 
   test-windows-cygwin:
     runs-on: windows-2025
@@ -178,14 +195,15 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Configure git for Unix line endings
+      shell: powershell
       run: |
         # Re-checkout files with Unix line endings
         git config core.autocrlf false
         git rm --cached -rf .
         git reset --hard HEAD
-      shell: powershell
       
     - name: Install 1Password CLI
+      shell: powershell
       run: |
         # Install 1Password CLI using winget with non-interactive flags
         winget install 1password-cli --accept-source-agreements --accept-package-agreements
@@ -195,10 +213,10 @@ jobs:
         
         # Test that the installation worked
         op --version
-      shell: powershell
       
     - name: Configure 1Password and fetch secrets
       id: fetch-secrets
+      shell: powershell
       run: |
         # Set service account token
         $Env:OP_SERVICE_ACCOUNT_TOKEN = "${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}"
@@ -220,9 +238,9 @@ jobs:
         # Export as step outputs
         echo "client-id=$CF_ACCESS_CLIENT_ID" >> $env:GITHUB_OUTPUT
         echo "client-secret=$CF_ACCESS_CLIENT_SECRET" >> $env:GITHUB_OUTPUT
-      shell: powershell
       
     - name: Install Cygwin+Wget using installer
+      shell: powershell
       run: |
         # Run the cygwin-wget-installer.bat to test the installer and install Cygwin
         Write-Host "Testing and running cygwin-wget-installer.bat..."
@@ -244,7 +262,6 @@ jobs:
           Write-Host "Contents of C:\cygwin64\bin:"
           Get-ChildItem "C:\cygwin64\bin" | Select-Object Name | Format-Table -AutoSize
         }
-      shell: powershell
       
     - name: Test script in Cygwin with debug mode
       env:
@@ -273,3 +290,11 @@ jobs:
         $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
         $repoPath = $repoPath.ToLower()
         C:\cygwin64\bin\bash.exe --login -c "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret'; bash '$repoPath/mlc-r2-downloader.sh' -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri && echo '[PASS] Cygwin service account test PASSED!'"
+
+    - name: Test script in Cygwin with no authentication required
+      shell: powershell
+      run: |
+        # Run script with no authentication required
+        $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
+        $repoPath = $repoPath.ToLower()
+        C:\cygwin64\bin\bash.exe --login -c "bash '$repoPath/mlc-r2-downloader.sh' -st -d test/dataset https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri"
