@@ -7,7 +7,7 @@
 
 ### How It Works
 
-The MLCommons R2 Downloader is a bash script that automatically handles authentication and downloads from Cloudflare R2 buckets protected by Cloudflare Access. It will:
+The MLCommons R2 Downloader is a bash script that downloads datasets from R2 buckets. In the case of buckets protected by Cloudflare Access, it automatically handles authentication. Depending on the need for authentication, it will:
 
 - Open a browser window to a Cloudflare Access page for authentication on first run
 - Cache authentication tokens for future use
@@ -22,9 +22,9 @@ The MLCommons R2 Downloader is a bash script that automatically handles authenti
 
 ### Requirements
 
-The script automatically installs `cloudflared` but you may need to install other dependencies (the script will tell you if dependencies are missing).
+If authentication in required, he script automatically installs `cloudflared` but you may need to install other dependencies (the script will tell you if dependencies are missing).
 
-- `cloudflared` - Will be auto-installed if missing
+- `cloudflared` - Will be auto-installed if missing and needed
 - `wget` - For downloading files
 - `mktemp` - For temporary file handling
 - `md5sum/gmd5sum` - For hash verification
