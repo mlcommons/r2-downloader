@@ -2,12 +2,6 @@ name: Test R2 Downloader & Cygwin + Wget Installer
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ dev-no-auth ]
-    paths:
-      - 'mlc-r2-downloader.sh'
-      - 'cygwin-wget-installer.bat'
-      - '.github/workflows/test-downloader.yml'
   pull_request:
     types: [opened,closed,synchronize]
     branches: [ main ]
