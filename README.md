@@ -22,7 +22,7 @@ The MLCommons R2 Downloader is a bash script that downloads datasets from R2 buc
 
 ### Requirements
 
-If authentication in required, he script automatically installs `cloudflared` but you may need to install other dependencies (the script will tell you if dependencies are missing).
+If authentication in required, the script automatically installs `cloudflared` but you may need to install other dependencies (the script will tell you if dependencies are missing).
 
 - `cloudflared` - Will be auto-installed if missing and needed
 - `wget` - For downloading files
