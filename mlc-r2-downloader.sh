@@ -693,19 +693,53 @@ authenticate() {
     ACCESS_HEADER=("--header=cf-access-token: $TOKEN")
 }
 
-# Check if authentication is required
-echo "Checking if authentication is required..."
-http_code=$(curl -s -o /dev/null -w "%{http_code}\n" --retry 3 --retry-connrefused --max-time 15 "$url_dataset_info" 2>/dev/null)
+# Function to check if authentication is required
+# Return codes:
+# 0 -> Authentication required
+# 1 -> No authentication required
+# 2 -> Network / protocol error (curl exit ≠ 0)
+check_auth_required() {
+  local url=$1
+  local headers
 
-if [ "$http_code" = "200" ]; then
-    echo "No authentication required for this download"
-elif [ "$http_code" = "302" ] || [ "$http_code" = "403" ]; then
-    echo "Authentication required (HTTP $http_code)"
-    authenticate
-else
-    echo "Warning: Unexpected HTTP response ($http_code), attempting authentication anyway..."
-    authenticate
-fi
+  # curl: silent progress but show errors (-sS), ignore body (-I), no redirect follow,
+  #       short time-outs so the script doesn't hang forever
+  headers=$(curl -sS -kI --max-redirs 0 \
+              --retry 3 --retry-connrefused \
+              --connect-timeout 3 --max-time 12 \
+              "$url" 2>/dev/null)
+
+  local curl_exit_code=$?
+
+  if [ $curl_exit_code -ne 0 ]; then
+      return 2  # Network or protocol failure
+  fi
+
+  # Look for ANY header that Cloudflare Access emits when the request is *not* already authenticated.
+  echo "$headers" | grep -qiE \
+      '^(location: .*/cdn-cgi/access/login|location: https://[^ ]*\.cloudflareaccess\.com/|www-authenticate: .*CF_Authorization|cf-access-required:|set-cookie: .*CF_AppSession=)'
+}
+
+# Check if authentication is required and authenticate if needed
+echo "Checking if authentication is required..."
+check_auth_required "$url_dataset_info"
+auth_result=$?
+
+# If authentication is required, authenticate
+case $auth_result in
+    0)
+        echo "Authentication required"
+        authenticate
+        ;;
+    1)
+        echo "No authentication required"
+        ;;
+    2)
+        echo "Error: Network or connection issue while checking authentication requirements" >&2
+        echo "Please check your network connection and the provided URL, then try again." >&2
+        exit 1
+        ;;
+esac
 
 # ========= DETERMINE DATASET INFO =========
 
