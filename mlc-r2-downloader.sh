@@ -1,8 +1,20 @@
 #!/bin/bash
 
+# Default values and constants
 DEBUG_INFO_THEN_EXIT=0
+ACCESS_HEADER=()
+SERVICE_ACCOUNT=0
+TESTING_MODE=0
+USE_CLOUDFLARED=0
+BROWSER_OPENER="N/A"
+HASH_CHECKER="md5sum"
+OS="unknown"
+
+# Cloudflare Access constants for MLCommons
 CLOUDFLARE_ACCESS_SUBDOMAIN="mlcommons"
 CLOUDFLARE_ACCESS_LOGOUT_URL="https://${CLOUDFLARE_ACCESS_SUBDOMAIN}.cloudflareaccess.com/cdn-cgi/access/logout"
+
+# Usage string
 USAGE_STRING="USAGE: bash [-d download-path] [-s] [-x] [-h] <URL>"
 
 # Function to show help
@@ -140,6 +152,79 @@ case "$OSTYPE" in
         OS="unknown"
         ;;
 esac
+
+# Function to check if a command exists
+check_dependency() {
+    if ! command -v "$1" &> /dev/null; then
+        echo "Error: Required command '$1' not found." >&2
+        echo "Please install $1 before running this script." >&2
+        echo "Use -h for help and installation requirements" >&2
+        exit 1
+    fi
+}
+
+# Check for required dependencies
+check_dependency "mktemp"
+check_dependency "wget"
+check_dependency "curl"
+
+# Set hash checker command based on OS
+case "$OS" in
+    "macos")
+        # On macOS, use md5sum or gmd5sum
+        if command -v md5sum &> /dev/null; then
+            HASH_CHECKER="md5sum"
+        elif command -v gmd5sum &> /dev/null; then
+            HASH_CHECKER="gmd5sum"
+        else
+            echo "Error: Neither md5sum nor gmd5sum found on macOS." >&2
+            echo "Please install one of the following:" >&2
+            echo "  - md5sum (from md5sha1sum): brew install md5sha1sum / sudo port install md5sha1sum" >&2
+            echo "  - gmd5sum (from coreutils): brew install coreutils / sudo port install coreutils" >&2
+            echo "Then re-run this script." >&2
+            exit 1
+        fi
+        ;;
+    "linux"|"wsl"|"cygwin")
+        HASH_CHECKER="md5sum"
+        ;;
+    *)
+        HASH_CHECKER="md5sum"  # Default to md5sum
+        ;;
+esac
+
+# Check if hash checker is available
+check_dependency "$HASH_CHECKER"
+
+
+# Function to check for browser opener
+check_browser_opener() {
+    # Set browser opener command based on OS
+    case "$OS" in
+        "macos")
+            BROWSER_OPENER="open"
+            ;;
+        "wsl")
+            BROWSER_OPENER="explorer.exe"
+            ;;
+        "linux")
+            BROWSER_OPENER="xdg-open"
+            ;;
+        "cygwin")
+            BROWSER_OPENER="cygstart"
+            ;;
+        *)
+            BROWSER_OPENER=""
+            ;;
+    esac
+
+    # Check if browser opener is available
+    if [ -n "$BROWSER_OPENER" ]; then
+        if ! command -v "$BROWSER_OPENER" &> /dev/null; then
+            BROWSER_OPENER=""
+        fi
+    fi
+}
 
 # Function to install cloudflared
 install_cloudflared() {
@@ -315,23 +400,8 @@ install_cloudflared() {
     fi
 }
 
-# Function to check if a command exists
-check_dependency() {
-    if ! command -v "$1" &> /dev/null; then
-        echo "Error: Required command '$1' not found." >&2
-        echo "Please install $1 before running this script." >&2
-        echo "Use -h for help and installation requirements" >&2
-        exit 1
-    fi
-}
-
-# Check for required dependencies
-check_dependency "mktemp"
-check_dependency "wget"
-
-# Check for cloudflared & install if not found or if version is too old
-# Only check/install cloudflared if USE_CLOUDFLARED is set
-if [[ $USE_CLOUDFLARED == 1 ]]; then
+# Function to check for cloudflared & install if not found or if version is too old
+check_cloudflared() {
     echo "Checking dependencies..."
     if ! command -v cloudflared &> /dev/null; then
         echo "cloudflared not found. Attempting to install..."
@@ -371,61 +441,7 @@ if [[ $USE_CLOUDFLARED == 1 ]]; then
         fi
     fi
     fi
-fi
-
-# Set hash checker command based on OS
-case "$OS" in
-    "macos")
-        # On macOS, use md5sum or gmd5sum
-        if command -v md5sum &> /dev/null; then
-            HASH_CHECKER="md5sum"
-        elif command -v gmd5sum &> /dev/null; then
-            HASH_CHECKER="gmd5sum"
-        else
-            echo "Error: Neither md5sum nor gmd5sum found on macOS." >&2
-            echo "Please install one of the following:" >&2
-            echo "  - md5sum (from md5sha1sum): brew install md5sha1sum / sudo port install md5sha1sum" >&2
-            echo "  - gmd5sum (from coreutils): brew install coreutils / sudo port install coreutils" >&2
-            echo "Then re-run this script." >&2
-            exit 1
-        fi
-        ;;
-    "linux"|"wsl"|"cygwin")
-        HASH_CHECKER="md5sum"
-        ;;
-    *)
-        HASH_CHECKER="md5sum"  # Default to md5sum
-        ;;
-esac
-
-# Check if hash checker is available
-check_dependency "$HASH_CHECKER"
-
-# Set browser opener command based on OS
-case "$OS" in
-    "macos")
-        BROWSER_OPENER="open"
-        ;;
-    "wsl")
-        BROWSER_OPENER="explorer.exe"
-        ;;
-    "linux")
-        BROWSER_OPENER="xdg-open"
-        ;;
-    "cygwin")
-        BROWSER_OPENER="cygstart"
-        ;;
-    *)
-        BROWSER_OPENER=""
-        ;;
-esac
-
-# Check if browser opener is available
-if [ -n "$BROWSER_OPENER" ]; then
-    if ! command -v "$BROWSER_OPENER" &> /dev/null; then
-        BROWSER_OPENER=""
-    fi
-fi
+}
 
 # Function to get authentication token
 get_token() {
@@ -485,9 +501,6 @@ get_token() {
 
     echo "Authentication successful!"
 }
-
-# Get authentication token
-get_token
 
 # Function to pluralize a word based on count
 pluralize() {
@@ -550,7 +563,7 @@ confirm_token_invalidation() {
     local poll_count=0
     local max_minutes=$((max_polls * poll_interval / 60))  # Calculate maximum minutes of polling
     
-    while [ $poll_count -lt $max_polls ]; do
+    while [ $poll_count -lt "$max_polls" ]; do
         poll_count=$((poll_count + 1))
         echo "Checking token status (attempt $poll_count of $max_polls)..."
         
@@ -560,9 +573,9 @@ confirm_token_invalidation() {
         
         if [ "$http_code" = "200" ]; then
             echo "Token still valid (HTTP $http_code)"
-            if [ $poll_count -lt $max_polls ]; then
+            if [ $poll_count -lt "$max_polls" ]; then
                 echo "Waiting $poll_interval seconds before next check..."
-                sleep $poll_interval
+                sleep "$poll_interval"
             elif [[ $full_confirmation == true ]]; then
                 echo "Token still valid after final attempt."
             fi
@@ -578,9 +591,9 @@ confirm_token_invalidation() {
                 echo " - this may indicate a service issue" >&2
             fi
             
-            if [ $poll_count -lt $max_polls ]; then
+            if [ $poll_count -lt "$max_polls" ]; then
                 echo "Waiting $poll_interval seconds before retrying..."
-                sleep $poll_interval
+                sleep "$poll_interval"
             elif [[ $full_confirmation == true ]]; then
                 echo "Proceeding with authentication attempt anyway..."
                 break
@@ -659,11 +672,74 @@ check_token_expiration() {
     fi
 }
 
-# Check token expiration time if using cloudflared
-if [[ $USE_CLOUDFLARED == 1 ]]; then
-    echo "Checking token expiration time..."
-    check_token_expiration "$TOKEN"
-fi
+authenticate() {
+    # If using cloudflared, check for browser opener and cloudflared
+    if [[ $USE_CLOUDFLARED == 1 ]]; then
+        check_browser_opener
+        check_cloudflared
+    fi
+
+    # Get authentication token
+    get_token
+
+    # If using cloudflared, check token expiration time
+    if [[ $USE_CLOUDFLARED == 1 ]]; then
+        echo "Checking token expiration time..."
+        check_token_expiration "$TOKEN"
+    fi
+
+    ACCESS_HEADER=("--header=cf-access-token: $TOKEN")
+}
+
+# Function to check if authentication is required
+# Return codes:
+# 0 -> Authentication required
+# 1 -> No authentication required
+# 2 -> Network / protocol error (curl exit ≠ 0)
+check_auth_required() {
+  local url=$1
+  local headers
+
+  # curl: silent progress but show errors (-sS), ignore body (-I), no redirect follow,
+  #       short time-outs so the script doesn't hang forever
+  headers=$(curl -sS -kI --max-redirs 0 \
+              --retry 3 --retry-connrefused \
+              --connect-timeout 3 --max-time 12 \
+              "$url" 2>/dev/null)
+
+  local curl_exit_code=$?
+
+  if [ $curl_exit_code -ne 0 ]; then
+      return 2  # Network or protocol failure
+  fi
+
+  # Look for ANY header that Cloudflare Access emits when the request is *not* already authenticated.
+  echo "$headers" | grep -qiE \
+      '^(location: .*/cdn-cgi/access/login|location: https://[^ ]*\.cloudflareaccess\.com/|www-authenticate: .*CF_Authorization|cf-access-required:|set-cookie: .*CF_AppSession=)'
+}
+
+# Check if authentication is required and authenticate if needed
+echo "Checking if authentication is required..."
+check_auth_required "$url_dataset_info"
+auth_result=$?
+
+# If authentication is required, authenticate
+case $auth_result in
+    0)
+        echo "Authentication required"
+        authenticate
+        ;;
+    1)
+        echo "No authentication required"
+        ;;
+    2)
+        echo "Error: Network or connection issue while checking authentication requirements" >&2
+        echo "Please check your network connection and the provided URL, then try again." >&2
+        exit 1
+        ;;
+esac
+
+# ========= DETERMINE DATASET INFO =========
 
 # Retrieve the base path of the URL
 # Regexp taken from Perplexity.ai, referencing StackOverflow
@@ -737,7 +813,7 @@ fi
 echo "Downloading dataset information..."
 
 # Download the actual location of the dataset
-dataset_base_url=`wget --header="cf-access-token: $TOKEN" --max-redirect=0 --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 -qO- "$url_dataset_info"` || { echo "Error: Failed to download dataset info from $url_dataset_info. Check URL and network connection." >&2; exit 1; }
+dataset_base_url=`wget "${ACCESS_HEADER[@]}" --max-redirect=0 --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 -qO- "$url_dataset_info"` || { echo "Error: Failed to download dataset info from $url_dataset_info. Check URL and network connection." >&2; exit 1; }
 
 # Calculate the dataset_base_path by substracting the length of protocol+host from the dataset URL
 dataset_base_path="$protocol://$host/"
@@ -770,6 +846,7 @@ if [[ $DEBUG_INFO_THEN_EXIT == 1 ]]; then
   echo "HASH_CHECKER: $HASH_CHECKER"
   echo "BROWSER_OPENER: $BROWSER_OPENER"
   echo "USE_CLOUDFLARED: $USE_CLOUDFLARED"
+  echo "SERVICE_ACCOUNT: $SERVICE_ACCOUNT"
   echo "TESTING_MODE: $TESTING_MODE"
 
   echo -e "\nInitial request\n"
@@ -799,7 +876,7 @@ if [[ $DEBUG_INFO_THEN_EXIT == 1 ]]; then
   exit 100
 fi
 
-# ========= ACTUAL START OF DOWNLOAD
+# ========= ACTUAL START OF DOWNLOAD =========
 
 echo "Creating download directory: $download_dir"
 
@@ -813,7 +890,7 @@ urls_file=`mktemp`	# Generated URL list for wget
 echo "Downloading checksums file..."
 
 # Download the hashes file  
-wget --header="cf-access-token: $TOKEN" --max-redirect=0 --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 -nc -q -P "$download_dir" "$hashes_url" || { echo "Error: Failed to download checksums file from $hashes_url." >&2; exit 1; }
+wget "${ACCESS_HEADER[@]}" --max-redirect=0 --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 -nc -q -P "$download_dir" "$hashes_url" || { echo "Error: Failed to download checksums file from $hashes_url." >&2; exit 1; }
 
 echo "Preparing file list for download..."
 
@@ -824,7 +901,7 @@ sed 's/^[a-f0-9]\{32\}[[:space:]]*//' "$download_dir/$HASHES_FILE_NAME" | sed 's
 echo "Starting download of dataset files..."
 
 # Main download command. Use -P to specify the download directory. Mind the trailing "/" after "dataset_base_url; without this wget would "eat" 1 hashes_path
-wget --header="cf-access-token: $TOKEN" --input-file="$urls_file" --continue -nH -x --cut-dirs="$cut_dirs" -B "$dataset_base_url/" -P "$download_dir" --progress=bar:force --max-redirect=0 --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 || { echo "Error: Download failed. Re-run the script to resume the download." >&2; exit 1; }
+wget "${ACCESS_HEADER[@]}" --input-file="$urls_file" --continue -nH -x --cut-dirs="$cut_dirs" -B "$dataset_base_url/" -P "$download_dir" --progress=bar:force --max-redirect=0 --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 || { echo "Error: Download failed. Re-run the script to resume the download." >&2; exit 1; }
 
 echo "Download completed successfully!"
 
