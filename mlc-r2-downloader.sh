@@ -15,55 +15,65 @@ CLOUDFLARE_ACCESS_SUBDOMAIN="mlcommons"
 CLOUDFLARE_ACCESS_LOGOUT_URL="https://${CLOUDFLARE_ACCESS_SUBDOMAIN}.cloudflareaccess.com/cdn-cgi/access/logout"
 
 # Usage string
-USAGE_STRING="USAGE: bash [-d download-path] [-s] [-x] [-h] <URL>"
+USAGE_STRING="USAGE: bash [-d download-path] [-s] [-t] [-x] [-h] <URL>"
 
 # Function to show help
 show_help() {
     cat << EOF
-MLCommons R2 Downloader - Download files from Cloudflare R2 buckets protected by Cloudflare Access
+MLCommons R2 Downloader - Download files from Cloudflare R2 buckets with or without Cloudflare Access authentication.
 
 $USAGE_STRING
 
 ARGUMENTS:
-    <URL>                   URL to the dataset metadata file (*.uri) on the R2 bucket
-                           This file contains the base URL for the dataset files
+    <URL>                   URL to the dataset metadata file (*.uri) on the R2 bucket.
+                           This file contains the base URL for the dataset files.
 
 OPTIONS:
-    -d download-path       Directory where files will be downloaded
-                           Defaults to the dataset name from the URL if not specified
-    -s                     Use service account credentials (requires CF_ACCESS_CLIENT_ID and
-                           CF_ACCESS_CLIENT_SECRET environment variables)
-    -t                     Testing mode - forces cloudflared check/install even when using service account
-    -x                     Debug mode - shows parsed URL components and configuration then exits
-    -h                     Show this help message and exit
+    -d download-path       Directory where files will be downloaded.
+                           Defaults to the dataset name from the URL if not specified.
+    -s                     Use service-account credentials for authentication (requires
+                           CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET environment variables).
+    -t                     Testing mode: runs reduced, non-interactive checks and always verifies
+                           cloudflared is installed (useful for CI).
+    -x                     Debug mode: prints parsed URL components and configuration then exits.
+    -h                     Show this help message and exit.
 
 EXAMPLES:
-    # Download to current directory using dataset name
-    bash https://inference-private.mlcommons-storage.org/metadata/llama3.uri
+    # Download a public dataset to current directory using dataset name
+    bash https://public-dataset.mlcommons-storage.org/metadata/dataset-name.uri
 
     # Download to specific directory
-    bash -d ./my-dataset https://inference-private.mlcommons-storage.org/metadata/llama3.uri
+    bash -d /path/to/my-dataset https://public-dataset.mlcommons-storage.org/metadata/dataset-name.uri
 
-    # Use service account authentication
-    bash -s https://inference-private.mlcommons-storage.org/metadata/llama3.uri
+    # Download a private dataset with interactive browser login
+    bash https://private-dataset.mlcommons-storage.org/metadata/dataset-name.uri
 
-    # Use service account with testing mode (checks cloudflared even with service account)
-    bash -s -t https://inference-private.mlcommons-storage.org/metadata/llama3.uri
+    # Use a service account for non-interactive authentication
+    # (make sure to set CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET environment variables)
+    bash -s https://private-dataset.mlcommons-storage.org/metadata/dataset-name.uri
 
-    # Debug mode to see how URL is parsed
-    bash -x https://inference-private.mlcommons-storage.org/metadata/llama3.uri
+    # CI / automated test mode (service account + testing mode)
+    bash -s -t https://private-dataset.mlcommons-storage.org/metadata/dataset-name.uri
+
+    # Debug mode to inspect URL parsing and configuration
+    bash -x https://private-dataset.mlcommons-storage.org/metadata/dataset-name.uri
 
 REQUIREMENTS:
-    - cloudflared (will be auto-installed if missing)  
     - wget
     - mktemp
     - md5sum/gmd5sum (for hash verification)
+    - cloudflared (auto-installed only if authentication is required)
 
 AUTHENTICATION:
-    This script uses Cloudflare Access for authentication. On first run, it will:
-    1. Open a browser window for you to authenticate
-    2. Cache authentication tokens for future use
-    3. Automatically re-authenticate when tokens expire
+    The downloader automatically detects whether the requested dataset is protected by
+    Cloudflare Access.
+
+    • Public dataset → No authentication needed, and cloudflared will be skipped.
+    • Private dataset → The script will authenticate using one of the following methods:
+        - Browser-based login (default)
+        - Service account (-s) for headless/CI usage.
+
+    The script will automatically re-authenticate when authentication sessions approach expiration.
 
 EOF
 }
