@@ -883,7 +883,7 @@ if [[ $DEBUG_INFO_THEN_EXIT == 1 ]]; then
 
   echo -e "\nDEBUG INFO END"
 
-  exit 100
+  exit 0
 fi
 
 # ========= ACTUAL START OF DOWNLOAD =========
