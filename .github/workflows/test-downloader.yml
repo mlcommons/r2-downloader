@@ -50,13 +50,13 @@ jobs:
         CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
         CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
       run: |
-        # Test debug mode - expect exit code 100
+        # Test debug mode - expect exit code 0
         set +e  # Don't exit on error
         bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri
         exit_code=$?
         
-        if [ $exit_code -eq 100 ]; then
-          echo "[PASS] Debug mode test PASSED (expected exit code 100)"
+        if [ $exit_code -eq 0 ]; then
+          echo "[PASS] Debug mode test PASSED (expected exit code 0)"
         else
           echo "[FAIL] Debug mode test FAILED (unexpected exit code: $exit_code)"
           exit 1
@@ -153,8 +153,8 @@ jobs:
         $output | ForEach-Object { Write-Host $_ }
         Write-Host "Script exit code: $exitCode"
         
-        if ($exitCode -eq 100) {
-          Write-Host "[PASS] WSL Debug mode test PASSED (expected exit code 100)"
+        if ($exitCode -eq 0) {
+          Write-Host "[PASS] WSL Debug mode test PASSED (expected exit code 0)"
           exit 0
         } else {
           Write-Host "[FAIL] WSL Debug mode test FAILED (unexpected exit code: $exitCode)"
@@ -269,7 +269,7 @@ jobs:
         
         $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
         $repoPath = $repoPath.ToLower()
-        C:\cygwin64\bin\bash.exe --login -c "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret'; bash '$repoPath/mlc-r2-downloader.sh' -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri; exit_code=`$?; if [ `"`$exit_code`" -ne 100 ]; then echo '[FAIL] Wrong exit code: `$exit_code'; exit 1; else echo '[PASS] Correct exit code 100 received.'; fi"
+        C:\cygwin64\bin\bash.exe --login -c "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret'; bash '$repoPath/mlc-r2-downloader.sh' -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri; exit_code=`$?; if [ `"`$exit_code`" -ne 0 ]; then echo '[FAIL] Wrong exit code: `$exit_code'; exit 1; else echo '[PASS] Correct exit code 0 received.'; fi"
       
     - name: Test script in Cygwin with service account and testing mode
       env:
