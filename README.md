@@ -34,7 +34,7 @@ If authentication in required, the script automatically installs `cloudflared` b
 The basic command syntax is:
 
 ```
-bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) <URL>
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) [options] <URL>
 ```
 
 Where `<URL>` is the path to a dataset metadata file (*.uri) in a R2 bucket. This metadata file will point the downloader to the appropriate dataset files.
@@ -48,6 +48,8 @@ The downloader supports several options:
 - `-s` - Use service account credentials for authentication (requires CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET environment variables)
 - `-t` - Testing mode for running automated tests of the script with service account credentials
 - `-x` - Debug mode to see parsed URL components and detected system info
+
+**Note:** All options must be specified *before* the `<URL>` argument.
 
 ## Cygwin + Wget Installer
 
