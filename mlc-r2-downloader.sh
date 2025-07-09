@@ -136,6 +136,9 @@ cleanup() {
     
     # Clean up install temp directory if it was created
     [[ -n "$tmp_dir" && -d "$tmp_dir" ]] && rm -rf "$tmp_dir"
+    
+    # Clean up temporary checksums directory if it was created
+    [[ -n "$temp_checksums_dir" && -d "$temp_checksums_dir" ]] && rm -rf "$temp_checksums_dir"
 }
 
 # Set the cleanup as a trap to run on exit regardless of success or failure
