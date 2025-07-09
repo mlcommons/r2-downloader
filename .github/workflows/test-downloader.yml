@@ -74,6 +74,11 @@ jobs:
       run: |
         # Run script with no authentication required
         bash ./mlc-r2-downloader.sh -st -d test/dataset https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri
+
+    - name: Test script with single-file dataset
+      run: |
+        # Run script with single-file dataset
+        bash ./mlc-r2-downloader.sh https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri
         
   test-windows-wsl:
     runs-on: windows-2025
@@ -178,6 +183,12 @@ jobs:
       run: |
         # Run script with no authentication required
         wsl bash -c "bash ./mlc-r2-downloader.sh -st -d test/dataset https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri"
+
+    - name: Test script in WSL with single-file dataset
+      shell: powershell
+      run: |
+        # Run script with single-file dataset
+        wsl bash -c "bash ./mlc-r2-downloader.sh https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri"
 
   test-windows-cygwin:
     runs-on: windows-2025
@@ -292,3 +303,11 @@ jobs:
         $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
         $repoPath = $repoPath.ToLower()
         C:\cygwin64\bin\bash.exe --login -c "bash '$repoPath/mlc-r2-downloader.sh' -st -d test/dataset https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri"
+
+    - name: Test script in Cygwin with single-file dataset
+      shell: powershell
+      run: |
+        # Run script with single-file dataset
+        $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
+        $repoPath = $repoPath.ToLower()
+        C:\cygwin64\bin\bash.exe --login -c "bash '$repoPath/mlc-r2-downloader.sh' https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri"
