@@ -832,14 +832,33 @@ dataset_base_path=$( echo "$dataset_base_url" | cut -c ${#dataset_base_path}- | 
 # Determine the number of cut_dirs by counting individual elements in dataset_base_path and adding 1 to cut off the 'dataset' directory (ex: abc/def -> 1)
 cut_dirs=$(( $( echo "${dataset_base_path//\//$'\n'}" | grep -v '^$' | wc -l ) ))
 
+# Download checksums file to analyze dataset structure
+echo "Downloading checksums file..."
+
+# Create a temporary directory for the checksums file
+temp_checksums_dir=$(mktemp -d)
+
+# Download the hashes file to temporary directory
+wget "${ACCESS_HEADER[@]}" --max-redirect=0 --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 -nc -q -P "$temp_checksums_dir" "$hashes_url" || { echo "Error: Failed to download checksums file from $hashes_url." >&2; exit 1; }
+
 # Determine download directory
 if [[ -z "$download_dir" ]]; then
-    # If no download directory specified, use the dataset name from the URL
-    if [[ ! $dataset_base_url =~ (.*)/(.*)$ ]]; then
-        echo "Error: couldn't parse dataset download URL, obtained from $url_dataset_info"
-        exit 1
+    # No download directory specified, check if it's a single-file dataset
+    # Count the number of files in the MD5 file
+    file_count=$(grep -c '^[a-f0-9]\{32\}[[:space:]]' "$temp_checksums_dir/$HASHES_FILE_NAME")
+    
+    if [[ $file_count -eq 1 ]]; then
+        echo "Detected single-file dataset. Will download to current directory."
+        download_dir="."
+    else
+        echo "Detected multi-file dataset ($file_count files). Will download to subdirectory."
+        # Use the dataset name from the URL for multi-file datasets
+        if [[ ! $dataset_base_url =~ (.*)/(.*)$ ]]; then
+            echo "Error: couldn't parse dataset download URL, obtained from $url_dataset_info"
+            exit 1
+        fi
+        download_dir=${BASH_REMATCH[2]}
     fi
-    download_dir=${BASH_REMATCH[2]}
 fi
 
 echo "Preparing download..."
@@ -880,6 +899,9 @@ if [[ $DEBUG_INFO_THEN_EXIT == 1 ]]; then
   echo "dataset_base_path: $dataset_base_path"
   echo "cut_dirs: $cut_dirs"
   echo "download_dir: $download_dir"
+  if [[ -n "$file_count" ]]; then
+      echo "file_count: $file_count"
+  fi
 
   echo -e "\nDEBUG INFO END"
 
@@ -888,19 +910,18 @@ fi
 
 # ========= ACTUAL START OF DOWNLOAD =========
 
-echo "Creating download directory: $download_dir"
-
-# Create the download directory if it doesn't exist
-mkdir -p "$download_dir" || { echo "Error: Failed to create download directory '$download_dir'" >&2; exit 1; }
-
 # Create a temporary file for keeping the file list.
 # We use a file instead of a shell variable as the list can be large.
 urls_file=`mktemp`	# Generated URL list for wget
 
-echo "Downloading checksums file..."
+# Create the final download directory and copy the checksums file there
+if [[ "$download_dir" != "." ]]; then
+    echo "Creating download directory: $download_dir"
+    mkdir -p "$download_dir" || { echo "Error: Failed to create download directory '$download_dir'" >&2; exit 1; }
+fi
 
-# Download the hashes file  
-wget "${ACCESS_HEADER[@]}" --max-redirect=0 --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 -nc -q -P "$download_dir" "$hashes_url" || { echo "Error: Failed to download checksums file from $hashes_url." >&2; exit 1; }
+# Copy the checksums file to the final download directory
+cp "$temp_checksums_dir/$HASHES_FILE_NAME" "$download_dir/$HASHES_FILE_NAME" || { echo "Error: Failed to copy checksums file to download directory" >&2; exit 1; }
 
 echo "Preparing file list for download..."
 
