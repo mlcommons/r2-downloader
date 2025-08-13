@@ -947,7 +947,30 @@ old_wd=`pwd`
 
 cd "$download_dir" || { echo "Error: Failed to change to download directory" >&2; exit 1; }
 
-$HASH_CHECKER -c "$HASHES_FILE_NAME" || { echo "Error: Hash verification failed" >&2; exit 1; }
+JOBS=2
+
+echo "Using $JOBS parallel processes for verification..."
+
+# Portable reader: extract hash and filename faithfully
+# Supports lines like: "<hash>  <filename>" or "<hash> *<filename>"
+awk '
+  NF >= 2 {
+    hash=$1
+    # Strip the first field and leading spaces to get the rest as the filename part
+    $1=""
+    sub(/^ +/,"")
+    # If a leading "*" (binary flag) exists, drop it
+    if (substr($0,1,1)=="*") { $0=substr($0,2) }
+    print hash "\t" $0
+  }
+' "$HASHES_FILE_NAME" |
+xargs -P "$JOBS" -n 1 -d '\n' bash -c "
+  IFS=\$'\t' read -r hash file <<< \"\$1\"
+  echo \"Verifying: \$file\"
+  # Compute and compare using the same algorithm as $HASH_CHECKER
+  # For md5sum/sha256sum, printing the single-line format lets the checker verify via -c -
+  printf \"%s  %s\\n\" \"\$hash\" \"\$file\" | \"$HASH_CHECKER\" -c - >/dev/null
+" _ || { echo "Error: Hash verification failed" >&2; exit 1; }
 
 cd "$old_wd" || { echo "Error: Failed to return to original directory" >&2; exit 1; }
 
