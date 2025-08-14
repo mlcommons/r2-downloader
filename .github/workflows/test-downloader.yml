@@ -79,7 +79,7 @@ jobs:
         bash ./mlc-r2-downloader.sh https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri
         
   test-windows-wsl:
-    runs-on: windows-2025
+    runs-on: windows-latest
     environment: testing
     timeout-minutes: 10
     
@@ -160,7 +160,7 @@ jobs:
         wsl bash -c "bash ./mlc-r2-downloader.sh https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri"
 
   test-windows-cygwin:
-    runs-on: windows-2025
+    runs-on: windows-latest
     environment: testing
     timeout-minutes: 10
     
