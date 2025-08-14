@@ -38,8 +38,6 @@ jobs:
     - name: Load secrets
       id: op-load-secrets
       uses: 1password/load-secrets-action@v3
-      with:
-        export-env: false
       env:
         OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
@@ -100,8 +98,6 @@ jobs:
     - name: Load secrets
       id: op-load-secrets
       uses: 1password/load-secrets-action@v3
-      with:
-        export-env: false
       env:
         OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
@@ -183,8 +179,6 @@ jobs:
     - name: Load secrets
       id: op-load-secrets
       uses: 1password/load-secrets-action@v3
-      with:
-        export-env: false
       env:
         OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
