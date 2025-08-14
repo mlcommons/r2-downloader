@@ -37,9 +37,7 @@ jobs:
         
     - name: Load secrets
       id: op-load-secrets
-      uses: 1password/load-secrets-action@v2
-      with:
-        export-env: false
+      uses: 1password/load-secrets-action@v3
       env:
         OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
@@ -81,7 +79,7 @@ jobs:
         bash ./mlc-r2-downloader.sh https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri
         
   test-windows-wsl:
-    runs-on: windows-2025
+    runs-on: windows-latest
     environment: testing
     timeout-minutes: 10
     
@@ -97,42 +95,13 @@ jobs:
         git rm --cached -rf .
         git reset --hard HEAD
         
-    - name: Install 1Password CLI
-      shell: powershell
-      run: |
-        # Install 1Password CLI using winget with non-interactive flags
-        winget install 1password-cli --accept-source-agreements --accept-package-agreements
-        
-        # Refresh environment variables to pick up PATH changes
-        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
-        
-        # Test that the installation worked
-        op --version
-      
-    - name: Configure 1Password and fetch secrets
-      id: fetch-secrets
-      shell: powershell
-      run: |
-        # Set service account token
-        $Env:OP_SERVICE_ACCOUNT_TOKEN = "${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}"
-        
-        # Refresh PATH to ensure op command is available
-        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User") 
-        
-        # Verify service account configuration
-        op user get --me
-        
-        # Fetch secrets using op read
-        $CF_ACCESS_CLIENT_ID = op read "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
-        $CF_ACCESS_CLIENT_SECRET = op read "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
-        
-        # Register secrets for masking in GitHub Actions logs
-        Write-Output "::add-mask::$CF_ACCESS_CLIENT_ID"
-        Write-Output "::add-mask::$CF_ACCESS_CLIENT_SECRET"
-        
-        # Export as step outputs
-        echo "client-id=$CF_ACCESS_CLIENT_ID" >> $env:GITHUB_OUTPUT
-        echo "client-secret=$CF_ACCESS_CLIENT_SECRET" >> $env:GITHUB_OUTPUT
+    - name: Load secrets
+      id: op-load-secrets
+      uses: 1password/load-secrets-action@v3
+      env:
+        OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
+        CF_ACCESS_CLIENT_SECRET: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
       
     - name: Setup WSL
       uses: Vampire/setup-wsl@v5
@@ -141,8 +110,8 @@ jobs:
         
     - name: Test script in WSL with debug mode
       env:
-        CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
-        CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
+        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
+        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
       shell: powershell
       run: |
         # Capture environment variables in PowerShell variables for proper expansion
@@ -168,8 +137,8 @@ jobs:
         
     - name: Test script in WSL with service account and testing mode
       env:
-        CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
-        CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
+        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
+        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
       shell: powershell
       run: |
         # Capture environment variables in PowerShell variables for proper expansion
@@ -191,7 +160,7 @@ jobs:
         wsl bash -c "bash ./mlc-r2-downloader.sh https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri"
 
   test-windows-cygwin:
-    runs-on: windows-2025
+    runs-on: windows-latest
     environment: testing
     timeout-minutes: 10
     
@@ -207,42 +176,13 @@ jobs:
         git rm --cached -rf .
         git reset --hard HEAD
       
-    - name: Install 1Password CLI
-      shell: powershell
-      run: |
-        # Install 1Password CLI using winget with non-interactive flags
-        winget install 1password-cli --accept-source-agreements --accept-package-agreements
-        
-        # Refresh environment variables to pick up PATH changes
-        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User")
-        
-        # Test that the installation worked
-        op --version
-      
-    - name: Configure 1Password and fetch secrets
-      id: fetch-secrets
-      shell: powershell
-      run: |
-        # Set service account token
-        $Env:OP_SERVICE_ACCOUNT_TOKEN = "${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}"
-        
-        # Refresh PATH to ensure op command is available
-        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH","User") 
-        
-        # Verify service account configuration
-        op user get --me
-        
-        # Fetch secrets using op read
-        $CF_ACCESS_CLIENT_ID = op read "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
-        $CF_ACCESS_CLIENT_SECRET = op read "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
-        
-        # Register secrets for masking in GitHub Actions logs
-        Write-Output "::add-mask::$CF_ACCESS_CLIENT_ID"
-        Write-Output "::add-mask::$CF_ACCESS_CLIENT_SECRET"
-        
-        # Export as step outputs
-        echo "client-id=$CF_ACCESS_CLIENT_ID" >> $env:GITHUB_OUTPUT
-        echo "client-secret=$CF_ACCESS_CLIENT_SECRET" >> $env:GITHUB_OUTPUT
+    - name: Load secrets
+      id: op-load-secrets
+      uses: 1password/load-secrets-action@v3
+      env:
+        OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
+        CF_ACCESS_CLIENT_SECRET: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
       
     - name: Install Cygwin+Wget using installer
       shell: powershell
@@ -270,8 +210,8 @@ jobs:
       
     - name: Test script in Cygwin with debug mode
       env:
-        CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
-        CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
+        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
+        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
       shell: powershell
       run: |
         # Capture environment variables in PowerShell variables for proper expansion
@@ -284,8 +224,8 @@ jobs:
       
     - name: Test script in Cygwin with service account and testing mode
       env:
-        CF_ACCESS_CLIENT_ID: ${{ steps.fetch-secrets.outputs.client-id }}
-        CF_ACCESS_CLIENT_SECRET: ${{ steps.fetch-secrets.outputs.client-secret }}
+        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
+        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
       shell: powershell
       run: |
         # Capture environment variables in PowerShell variables for proper expansion
