@@ -39,6 +39,8 @@ bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/he
 
 Where `<URL>` is the path to a dataset metadata file (*.uri) in a R2 bucket. This metadata file will point the downloader to the appropriate dataset files.
 
+_The metadata files are maintained in the [R2 Infra repo](https://github.com/mlcommons/r2-infra)_
+
 ### Command Options
 
 The downloader supports several options:
