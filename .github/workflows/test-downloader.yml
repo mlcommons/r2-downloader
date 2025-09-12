@@ -128,6 +128,7 @@ jobs:
   test-unix:
     needs: define-tests
     runs-on: ${{ matrix.os }}
+    environment: testing
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -241,6 +242,7 @@ jobs:
   test-windows-wsl:
     needs: define-tests
     runs-on: windows-latest
+    environment: testing
     timeout-minutes: 10
     
     steps:
@@ -349,6 +351,7 @@ jobs:
   test-windows-cygwin:
     needs: define-tests
     runs-on: windows-latest
+    environment: testing
     timeout-minutes: 10
     
     steps:
