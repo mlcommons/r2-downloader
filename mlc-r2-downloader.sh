@@ -106,6 +106,9 @@ while getopts "d:xhst" opt; do
     esac
 done
 
+# Shift processed options so that only positional arguments remain
+shift $((OPTIND - 1))
+
 # Check for mandatory non-named argument (URL)
 if [ $# -lt 1 ]; then
     echo "Error: A download URL is required as a mandatory argument." >&2
@@ -113,9 +116,6 @@ if [ $# -lt 1 ]; then
     echo "Use -h for help and examples" >&2
     exit 1
 fi
-
-# Shift processed options so that only positional arguments remain
-shift $((OPTIND - 1))
 
 url_dataset_info=$1
 
