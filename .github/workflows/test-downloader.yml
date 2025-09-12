@@ -24,7 +24,9 @@ jobs:
     steps:
       - id: set-matrix
         run: |
-          echo 'matrix={
+          echo "matrix<<EOF" >> $GITHUB_OUTPUT
+          cat << 'MATRIX_EOF' >> $GITHUB_OUTPUT
+          {
             "include": [
               {
                 "name": "help_flag",
@@ -118,7 +120,9 @@ jobs:
                 "skip_creds": true
               }
             ]
-          }' >> $GITHUB_OUTPUT
+          }
+          MATRIX_EOF
+          echo "EOF" >> $GITHUB_OUTPUT
 
   # Unix platforms (Linux and macOS)
   test-unix:
