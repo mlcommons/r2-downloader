@@ -3,7 +3,7 @@ name: Test R2 Downloader & Cygwin + Wget Installer
 on:
   workflow_dispatch:
   pull_request:
-    types: [opened,closed,synchronize]
+    types: [opened, synchronize]
     branches: [ main ]
     paths:
       - 'mlc-r2-downloader.sh'
@@ -128,13 +128,11 @@ jobs:
   test-unix:
     needs: define-tests
     runs-on: ${{ matrix.os }}
-    environment: testing
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        test: ${{ fromJson(needs.define-tests.outputs.test-matrix).include }}
     
     steps:
     - name: Checkout repository
@@ -148,7 +146,6 @@ jobs:
         fi
         
     - name: Load secrets
-      if: matrix.test.needs_auth
       id: op-load-secrets
       uses: 1password/load-secrets-action@v3
       env:
@@ -156,48 +153,95 @@ jobs:
         CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
         CF_ACCESS_CLIENT_SECRET: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
       
-    - name: Test - ${{ matrix.test.name }} (${{ matrix.test.description }})
+    - name: Run all test cases
       env:
-        CF_ACCESS_CLIENT_ID: ${{ matrix.test.needs_auth && steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID || '' }}
-        CF_ACCESS_CLIENT_SECRET: ${{ matrix.test.needs_auth && steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET || '' }}
+        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
+        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
       run: |
         set +e  # Don't exit on error so we can check exit codes
         
-        # Skip credentials for specific tests
-        if [[ "${{ matrix.test.skip_creds }}" == "true" ]]; then
-          unset CF_ACCESS_CLIENT_ID CF_ACCESS_CLIENT_SECRET
-        fi
+        # Parse the test matrix JSON
+        tests='${{ needs.define-tests.outputs.test-matrix }}'
         
-        # Build command
-        if [[ "${{ matrix.test.skip_url }}" == "true" ]]; then
-          cmd="bash ./mlc-r2-downloader.sh ${{ matrix.test.args }}"
-        else
-          cmd="bash ./mlc-r2-downloader.sh ${{ matrix.test.args }} ${{ matrix.test.url }}"
-        fi
+        # Initialize counters
+        total_tests=0
+        passed_tests=0
+        failed_tests=0
         
-        echo "Running: $cmd"
-        eval "$cmd"
-        exit_code=$?
+        echo "=== Running All Test Cases on ${{ matrix.os }} ==="
         
-        # Check exit code
-        expected_exit=${{ matrix.test.expect_exit }}
-        if [ $exit_code -eq $expected_exit ]; then
-          echo "✅ [PASS] ${{ matrix.test.name }} - Expected exit code $expected_exit, got $exit_code"
-        else
-          echo "❌ [FAIL] ${{ matrix.test.name }} - Expected exit code $expected_exit, got $exit_code"
+        # Process each test case
+        echo "$tests" | jq -r '.include[] | @base64' | while read -r encoded_test; do
+          # Decode the test case
+          test_data=$(echo "$encoded_test" | base64 -d)
+          
+          # Extract test properties
+          test_name=$(echo "$test_data" | jq -r '.name')
+          test_desc=$(echo "$test_data" | jq -r '.description')
+          test_args=$(echo "$test_data" | jq -r '.args')
+          test_url=$(echo "$test_data" | jq -r '.url')
+          expected_exit=$(echo "$test_data" | jq -r '.expect_exit')
+          needs_auth=$(echo "$test_data" | jq -r '.needs_auth')
+          skip_url=$(echo "$test_data" | jq -r '.skip_url')
+          skip_creds=$(echo "$test_data" | jq -r '.skip_creds')
+          
+          echo ""
+          echo "--- Test: $test_name ---"
+          echo "Description: $test_desc"
+          echo "Expected exit code: $expected_exit"
+          
+          # Set up environment variables for this test
+          if [[ "$skip_creds" == "true" ]]; then
+            unset CF_ACCESS_CLIENT_ID CF_ACCESS_CLIENT_SECRET
+          else
+            export CF_ACCESS_CLIENT_ID="${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}"
+            export CF_ACCESS_CLIENT_SECRET="${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}"
+          fi
+          
+          # Build command
+          if [[ "$skip_url" == "true" ]]; then
+            cmd="bash ./mlc-r2-downloader.sh $test_args"
+          else
+            cmd="bash ./mlc-r2-downloader.sh $test_args $test_url"
+          fi
+          
+          echo "Running: $cmd"
+          
+          # Execute the test
+          eval "$cmd"
+          actual_exit=$?
+          
+          # Check result
+          total_tests=$((total_tests + 1))
+          if [ $actual_exit -eq $expected_exit ]; then
+            echo "✅ [PASS] $test_name - Expected exit code $expected_exit, got $actual_exit"
+            passed_tests=$((passed_tests + 1))
+          else
+            echo "❌ [FAIL] $test_name - Expected exit code $expected_exit, got $actual_exit"
+            failed_tests=$((failed_tests + 1))
+          fi
+        done
+        
+        # Final summary
+        echo ""
+        echo "=== Test Summary for ${{ matrix.os }} ==="
+        echo "Total tests: $total_tests"
+        echo "Passed: $passed_tests"
+        echo "Failed: $failed_tests"
+        
+        # Exit with failure if any tests failed
+        if [ $failed_tests -gt 0 ]; then
+          echo "❌ Some tests failed on ${{ matrix.os }}"
           exit 1
+        else
+          echo "✅ All tests passed on ${{ matrix.os }}"
         fi
 
   # Windows WSL
   test-windows-wsl:
     needs: define-tests
     runs-on: windows-latest
-    environment: testing
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        test: ${{ fromJson(needs.define-tests.outputs.test-matrix).include }}
     
     steps:
     - name: Checkout repository
@@ -212,7 +256,6 @@ jobs:
         git reset --hard HEAD
         
     - name: Load secrets
-      if: matrix.test.needs_auth
       id: op-load-secrets
       uses: 1password/load-secrets-action@v3
       env:
@@ -225,64 +268,88 @@ jobs:
       with:
         distribution: Ubuntu-22.04
         
-    - name: Test WSL - ${{ matrix.test.name }} (${{ matrix.test.description }})
-      env:
-        CF_ACCESS_CLIENT_ID: ${{ matrix.test.needs_auth && steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID || '' }}
-        CF_ACCESS_CLIENT_SECRET: ${{ matrix.test.needs_auth && steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET || '' }}
+    - name: Run all test cases in WSL
       shell: powershell
       run: |
-        # Capture environment variables
-        $clientId = $env:CF_ACCESS_CLIENT_ID
-        $clientSecret = $env:CF_ACCESS_CLIENT_SECRET
+        # Parse the test matrix JSON
+        $tests = '${{ needs.define-tests.outputs.test-matrix }}' | ConvertFrom-Json
         
-        # Skip credentials for specific tests
-        if ("${{ matrix.test.skip_creds }}" -eq "true") {
-          $clientId = ""
-          $clientSecret = ""
+        # Initialize counters
+        $totalTests = 0
+        $passedTests = 0
+        $failedTests = 0
+        
+        Write-Host "=== Running All Test Cases in WSL ==="
+        
+        # Process each test case
+        foreach ($test in $tests.include) {
+          Write-Host ""
+          Write-Host "--- Test: $($test.name) ---"
+          Write-Host "Description: $($test.description)"
+          Write-Host "Expected exit code: $($test.expect_exit)"
+          
+          # Set up environment variables for this test
+          $clientId = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}"
+          $clientSecret = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}"
+          
+          if ($test.skip_creds -eq "true") {
+            $clientId = ""
+            $clientSecret = ""
+          }
+          
+          # Build command
+          $envVars = ""
+          if ($clientId -and $clientSecret) {
+            $envVars = "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret';"
+          }
+          
+          if ($test.skip_url -eq "true") {
+            $cmd = "$envVars bash ./mlc-r2-downloader.sh $($test.args)"
+          } else {
+            $cmd = "$envVars bash ./mlc-r2-downloader.sh $($test.args) $($test.url)"
+          }
+          
+          Write-Host "Running WSL command: $cmd"
+          
+          # Execute and capture output/exit code
+          $output = wsl bash -c $cmd
+          $exitCode = $LASTEXITCODE
+          
+          # Display output
+          Write-Host "Output:"
+          $output | ForEach-Object { Write-Host $_ }
+          
+          # Check result
+          $totalTests++
+          if ($exitCode -eq $test.expect_exit) {
+            Write-Host "✅ [PASS] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
+            $passedTests++
+          } else {
+            Write-Host "❌ [FAIL] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
+            $failedTests++
+          }
         }
         
-        # Build command
-        $envVars = ""
-        if ($clientId -and $clientSecret) {
-          $envVars = "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret';"
-        }
+        # Final summary
+        Write-Host ""
+        Write-Host "=== Test Summary for WSL ==="
+        Write-Host "Total tests: $totalTests"
+        Write-Host "Passed: $passedTests"
+        Write-Host "Failed: $failedTests"
         
-        if ("${{ matrix.test.skip_url }}" -eq "true") {
-          $cmd = "$envVars bash ./mlc-r2-downloader.sh ${{ matrix.test.args }}"
-        } else {
-          $cmd = "$envVars bash ./mlc-r2-downloader.sh ${{ matrix.test.args }} ${{ matrix.test.url }}"
-        }
-        
-        Write-Host "Running WSL command: $cmd"
-        
-        # Execute and capture output/exit code
-        $output = wsl bash -c $cmd
-        $exitCode = $LASTEXITCODE
-        
-        # Display output
-        Write-Host "Output:"
-        $output | ForEach-Object { Write-Host $_ }
-        
-        # Check exit code
-        $expectedExit = ${{ matrix.test.expect_exit }}
-        if ($exitCode -eq $expectedExit) {
-          Write-Host "✅ [PASS] ${{ matrix.test.name }} - Expected exit code $expectedExit, got $exitCode"
-          exit 0
-        } else {
-          Write-Host "❌ [FAIL] ${{ matrix.test.name }} - Expected exit code $expectedExit, got $exitCode"
+        # Exit with failure if any tests failed
+        if ($failedTests -gt 0) {
+          Write-Host "❌ Some tests failed in WSL"
           exit 1
+        } else {
+          Write-Host "✅ All tests passed in WSL"
         }
 
   # Windows Cygwin
   test-windows-cygwin:
     needs: define-tests
     runs-on: windows-latest
-    environment: testing
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        test: ${{ fromJson(needs.define-tests.outputs.test-matrix).include }}
     
     steps:
     - name: Checkout repository
@@ -297,7 +364,6 @@ jobs:
         git reset --hard HEAD
       
     - name: Load secrets
-      if: matrix.test.needs_auth
       id: op-load-secrets
       uses: 1password/load-secrets-action@v3
       env:
@@ -329,65 +395,95 @@ jobs:
           Get-ChildItem "C:\cygwin64\bin" | Select-Object Name | Format-Table -AutoSize
         }
       
-    - name: Test Cygwin - ${{ matrix.test.name }} (${{ matrix.test.description }})
-      env:
-        CF_ACCESS_CLIENT_ID: ${{ matrix.test.needs_auth && steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID || '' }}
-        CF_ACCESS_CLIENT_SECRET: ${{ matrix.test.needs_auth && steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET || '' }}
+    - name: Run all test cases in Cygwin
       shell: powershell
       run: |
-        # Capture environment variables
-        $clientId = $env:CF_ACCESS_CLIENT_ID
-        $clientSecret = $env:CF_ACCESS_CLIENT_SECRET
+        # Parse the test matrix JSON
+        $tests = '${{ needs.define-tests.outputs.test-matrix }}' | ConvertFrom-Json
         
-        # Skip credentials for specific tests
-        if ("${{ matrix.test.skip_creds }}" -eq "true") {
-          $clientId = ""
-          $clientSecret = ""
-        }
+        # Initialize counters
+        $totalTests = 0
+        $passedTests = 0
+        $failedTests = 0
         
         # Convert Windows path to Cygwin path
         $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
         $repoPath = $repoPath.ToLower()
         
-        # Build command
-        $envVars = ""
-        if ($clientId -and $clientSecret) {
-          $envVars = "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret';"
-        }
+        Write-Host "=== Running All Test Cases in Cygwin ==="
         
-        if ("${{ matrix.test.skip_url }}" -eq "true") {
-          $cmd = "$envVars bash '$repoPath/mlc-r2-downloader.sh' ${{ matrix.test.args }}; echo `"EXIT_CODE:`$?`""
-        } else {
-          $cmd = "$envVars bash '$repoPath/mlc-r2-downloader.sh' ${{ matrix.test.args }} ${{ matrix.test.url }}; echo `"EXIT_CODE:`$?`""
-        }
-        
-        Write-Host "Running Cygwin command: $cmd"
-        
-        # Execute command
-        $output = C:\cygwin64\bin\bash.exe --login -c $cmd
-        
-        # Extract exit code from output
-        $exitCode = 0
-        $cleanOutput = @()
-        foreach ($line in $output) {
-          if ($line -match "^EXIT_CODE:(\d+)$") {
-            $exitCode = [int]$matches[1]
+        # Process each test case
+        foreach ($test in $tests.include) {
+          Write-Host ""
+          Write-Host "--- Test: $($test.name) ---"
+          Write-Host "Description: $($test.description)"
+          Write-Host "Expected exit code: $($test.expect_exit)"
+          
+          # Set up environment variables for this test
+          $clientId = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}"
+          $clientSecret = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}"
+          
+          if ($test.skip_creds -eq "true") {
+            $clientId = ""
+            $clientSecret = ""
+          }
+          
+          # Build command
+          $envVars = ""
+          if ($clientId -and $clientSecret) {
+            $envVars = "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret';"
+          }
+          
+          if ($test.skip_url -eq "true") {
+            $cmd = "$envVars bash '$repoPath/mlc-r2-downloader.sh' $($test.args); echo `"EXIT_CODE:`$?`""
           } else {
-            $cleanOutput += $line
+            $cmd = "$envVars bash '$repoPath/mlc-r2-downloader.sh' $($test.args) $($test.url); echo `"EXIT_CODE:`$?`""
+          }
+          
+          Write-Host "Running Cygwin command: $cmd"
+          
+          # Execute command
+          $output = C:\cygwin64\bin\bash.exe --login -c $cmd
+          
+          # Extract exit code from output
+          $exitCode = 0
+          $cleanOutput = @()
+          foreach ($line in $output) {
+            if ($line -match "^EXIT_CODE:(\d+)$") {
+              $exitCode = [int]$matches[1]
+            } else {
+              $cleanOutput += $line
+            }
+          }
+          
+          # Display clean output
+          Write-Host "Output:"
+          $cleanOutput | ForEach-Object { Write-Host $_ }
+          
+          # Check result
+          $totalTests++
+          if ($exitCode -eq $test.expect_exit) {
+            Write-Host "✅ [PASS] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
+            $passedTests++
+          } else {
+            Write-Host "❌ [FAIL] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
+            $failedTests++
           }
         }
         
-        # Display clean output
-        Write-Host "Output:"
-        $cleanOutput | ForEach-Object { Write-Host $_ }
+        # Final summary
+        Write-Host ""
+        Write-Host "=== Test Summary for Cygwin ==="
+        Write-Host "Total tests: $totalTests"
+        Write-Host "Passed: $passedTests"
+        Write-Host "Failed: $failedTests"
         
-        # Check exit code
-        $expectedExit = ${{ matrix.test.expect_exit }}
-        if ($exitCode -eq $expectedExit) {
-          Write-Host "✅ [PASS] ${{ matrix.test.name }} - Expected exit code $expectedExit, got $exitCode"
-        } else {
-          Write-Host "❌ [FAIL] ${{ matrix.test.name }} - Expected exit code $expectedExit, got $exitCode"
+        # Exit with failure if any tests failed
+        if ($failedTests -gt 0) {
+          Write-Host "❌ Some tests failed in Cygwin"
           exit 1
+        } else {
+          Write-Host "✅ All tests passed in Cygwin"
         }
 
   # Summary job that depends on all test jobs
