@@ -267,6 +267,7 @@ jobs:
         $expectedExit = ${{ matrix.test.expect_exit }}
         if ($exitCode -eq $expectedExit) {
           Write-Host "✅ [PASS] ${{ matrix.test.name }} - Expected exit code $expectedExit, got $exitCode"
+          exit 0
         } else {
           Write-Host "❌ [FAIL] ${{ matrix.test.name }} - Expected exit code $expectedExit, got $exitCode"
           exit 1
