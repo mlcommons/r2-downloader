@@ -68,7 +68,7 @@ jobs:
                 "name": "missing_download_dir_arg",
                 "description": "Download directory flag without directory argument should fail",
                 "args": "-d",
-                "url": "https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri",
+                "url": "",
                 "expect_exit": 1,
                 "needs_auth": false,
                 "skip_url": true
