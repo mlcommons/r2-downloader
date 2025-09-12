@@ -345,6 +345,7 @@ jobs:
           exit 1
         } else {
           Write-Host "✅ All tests passed in WSL"
+          exit 0
         }
 
   # Windows Cygwin
