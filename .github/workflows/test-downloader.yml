@@ -3,7 +3,7 @@ name: Test R2 Downloader & Cygwin + Wget Installer
 on:
   workflow_dispatch:
   pull_request:
-    types: [opened,closed,synchronize]
+    types: [opened, synchronize]
     branches: [ main ]
     paths:
       - 'mlc-r2-downloader.sh'
@@ -16,11 +16,122 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Define all test cases in a centralized matrix
+  define-tests:
+    runs-on: ubuntu-latest
+    outputs:
+      test-matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          echo "matrix<<EOF" >> $GITHUB_OUTPUT
+          cat << 'MATRIX_EOF' >> $GITHUB_OUTPUT
+          {
+            "include": [
+              {
+                "name": "help_flag",
+                "description": "Help flag should work without URL",
+                "args": "-h",
+                "url": "",
+                "expect_exit": 0,
+                "needs_auth": false,
+                "skip_url": true
+              },
+              {
+                "name": "debug_mode",
+                "description": "Debug mode with service account",
+                "args": "-xs",
+                "url": "https://auth-test.mlcommons-storage.org/metadata/dataset.uri",
+                "expect_exit": 0,
+                "needs_auth": true,
+                "skip_url": false
+              },
+              {
+                "name": "missing_url_service_account",
+                "description": "Service account flag without URL should fail",
+                "args": "-s",
+                "url": "",
+                "expect_exit": 1,
+                "needs_auth": false,
+                "skip_url": true
+              },
+              {
+                "name": "missing_url_multiple_flags",
+                "description": "Multiple flags without URL should fail",
+                "args": "-s -t",
+                "url": "",
+                "expect_exit": 1,
+                "needs_auth": false,
+                "skip_url": true
+              },
+              {
+                "name": "missing_download_dir_arg",
+                "description": "Download directory flag without directory argument should fail",
+                "args": "-d",
+                "url": "",
+                "expect_exit": 1,
+                "needs_auth": false,
+                "skip_url": true
+              },
+              {
+                "name": "service_account_auth",
+                "description": "Service account with testing mode (auth required)",
+                "args": "-st -d test/dataset",
+                "url": "https://auth-test.mlcommons-storage.org/metadata/dataset.uri",
+                "expect_exit": 0,
+                "needs_auth": true,
+                "skip_url": false
+              },
+              {
+                "name": "no_auth_required",
+                "description": "No authentication required dataset",
+                "args": "-st -d test/dataset",
+                "url": "https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri",
+                "expect_exit": 0,
+                "needs_auth": false,
+                "skip_url": false
+              },
+              {
+                "name": "single_file_dataset",
+                "description": "Single file dataset download",
+                "args": "",
+                "url": "https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri",
+                "expect_exit": 0,
+                "needs_auth": false,
+                "skip_url": false
+              },
+              {
+                "name": "invalid_url",
+                "description": "Invalid URL format should fail",
+                "args": "-st",
+                "url": "not-a-valid-url",
+                "expect_exit": 1,
+                "needs_auth": false,
+                "skip_url": false
+              },
+              {
+                "name": "missing_credentials",
+                "description": "Service account without credentials should fail",
+                "args": "-s",
+                "url": "https://auth-test.mlcommons-storage.org/metadata/dataset.uri",
+                "expect_exit": 1,
+                "needs_auth": false,
+                "skip_url": false,
+                "skip_creds": true
+              }
+            ]
+          }
+          MATRIX_EOF
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  # Unix platforms (Linux and macOS)
   test-unix:
+    needs: define-tests
     runs-on: ${{ matrix.os }}
     environment: testing
     timeout-minutes: 10
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     
@@ -43,42 +154,93 @@ jobs:
         CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
         CF_ACCESS_CLIENT_SECRET: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
       
-    - name: Test script with debug mode and service account
+    - name: Run all test cases
       env:
         CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
         CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
       run: |
-        # Test debug mode - expect exit code 0
-        set +e  # Don't exit on error
-        bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri
-        exit_code=$?
+        set +e  # Don't exit on error so we can check exit codes
         
-        if [ $exit_code -eq 0 ]; then
-          echo "[PASS] Debug mode test PASSED (expected exit code 0)"
-        else
-          echo "[FAIL] Debug mode test FAILED (unexpected exit code: $exit_code)"
+        # Parse the test matrix JSON
+        tests='${{ needs.define-tests.outputs.test-matrix }}'
+        
+        # Initialize counters
+        total_tests=0
+        passed_tests=0
+        failed_tests=0
+        
+        echo "=== Running All Test Cases on ${{ matrix.os }} ==="
+        
+        # Process each test case
+        echo "$tests" | jq -r '.include[] | @base64' | while read -r encoded_test; do
+          # Decode the test case
+          test_data=$(echo "$encoded_test" | base64 -d)
+          
+          # Extract test properties
+          test_name=$(echo "$test_data" | jq -r '.name')
+          test_desc=$(echo "$test_data" | jq -r '.description')
+          test_args=$(echo "$test_data" | jq -r '.args')
+          test_url=$(echo "$test_data" | jq -r '.url')
+          expected_exit=$(echo "$test_data" | jq -r '.expect_exit')
+          needs_auth=$(echo "$test_data" | jq -r '.needs_auth')
+          skip_url=$(echo "$test_data" | jq -r '.skip_url')
+          skip_creds=$(echo "$test_data" | jq -r '.skip_creds')
+          
+          echo ""
+          echo "--- Test: $test_name ---"
+          echo "Description: $test_desc"
+          echo "Expected exit code: $expected_exit"
+          
+          # Set up environment variables for this test
+          if [[ "$skip_creds" == "true" ]]; then
+            unset CF_ACCESS_CLIENT_ID CF_ACCESS_CLIENT_SECRET
+          else
+            export CF_ACCESS_CLIENT_ID="${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}"
+            export CF_ACCESS_CLIENT_SECRET="${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}"
+          fi
+          
+          # Build command
+          if [[ "$skip_url" == "true" ]]; then
+            cmd="bash ./mlc-r2-downloader.sh $test_args"
+          else
+            cmd="bash ./mlc-r2-downloader.sh $test_args $test_url"
+          fi
+          
+          echo "Running: $cmd"
+          
+          # Execute the test
+          eval "$cmd"
+          actual_exit=$?
+          
+          # Check result
+          total_tests=$((total_tests + 1))
+          if [ $actual_exit -eq $expected_exit ]; then
+            echo "✅ [PASS] $test_name - Expected exit code $expected_exit, got $actual_exit"
+            passed_tests=$((passed_tests + 1))
+          else
+            echo "❌ [FAIL] $test_name - Expected exit code $expected_exit, got $actual_exit"
+            failed_tests=$((failed_tests + 1))
+          fi
+        done
+        
+        # Final summary
+        echo ""
+        echo "=== Test Summary for ${{ matrix.os }} ==="
+        echo "Total tests: $total_tests"
+        echo "Passed: $passed_tests"
+        echo "Failed: $failed_tests"
+        
+        # Exit with failure if any tests failed
+        if [ $failed_tests -gt 0 ]; then
+          echo "❌ Some tests failed on ${{ matrix.os }}"
           exit 1
+        else
+          echo "✅ All tests passed on ${{ matrix.os }}"
         fi
-        
-    - name: Test script with service account and testing mode
-      env:
-        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
-        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
-      run: |
-        # Run script with service account and testing mode flags
-        bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri
 
-    - name: Test script with no authentication required
-      run: |
-        # Run script with no authentication required
-        bash ./mlc-r2-downloader.sh -st -d test/dataset https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri
-
-    - name: Test script with single-file dataset
-      run: |
-        # Run script with single-file dataset
-        bash ./mlc-r2-downloader.sh https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri
-        
+  # Windows WSL
   test-windows-wsl:
+    needs: define-tests
     runs-on: windows-latest
     environment: testing
     timeout-minutes: 10
@@ -108,58 +270,87 @@ jobs:
       with:
         distribution: Ubuntu-22.04
         
-    - name: Test script in WSL with debug mode
-      env:
-        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
-        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
+    - name: Run all test cases in WSL
       shell: powershell
       run: |
-        # Capture environment variables in PowerShell variables for proper expansion
-        $clientId = $env:CF_ACCESS_CLIENT_ID
-        $clientSecret = $env:CF_ACCESS_CLIENT_SECRET
+        # Parse the test matrix JSON
+        $tests = '${{ needs.define-tests.outputs.test-matrix }}' | ConvertFrom-Json
         
-        # Run the script and capture the actual exit code using PowerShell's $LASTEXITCODE
-        $output = wsl bash -c "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret'; bash ./mlc-r2-downloader.sh -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri"
-        $exitCode = $LASTEXITCODE
+        # Initialize counters
+        $totalTests = 0
+        $passedTests = 0
+        $failedTests = 0
         
-        # Display the debug output with proper line breaks
-        Write-Host "Debug output:"
-        $output | ForEach-Object { Write-Host $_ }
-        Write-Host "Script exit code: $exitCode"
+        Write-Host "=== Running All Test Cases in WSL ==="
         
-        if ($exitCode -eq 0) {
-          Write-Host "[PASS] WSL Debug mode test PASSED (expected exit code 0)"
-          exit 0
-        } else {
-          Write-Host "[FAIL] WSL Debug mode test FAILED (unexpected exit code: $exitCode)"
-          exit 1
+        # Process each test case
+        foreach ($test in $tests.include) {
+          Write-Host ""
+          Write-Host "--- Test: $($test.name) ---"
+          Write-Host "Description: $($test.description)"
+          Write-Host "Expected exit code: $($test.expect_exit)"
+          
+          # Set up environment variables for this test
+          $clientId = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}"
+          $clientSecret = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}"
+          
+          if ($test.skip_creds -eq "true") {
+            $clientId = ""
+            $clientSecret = ""
+          }
+          
+          # Build command
+          $envVars = ""
+          if ($clientId -and $clientSecret) {
+            $envVars = "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret';"
+          }
+          
+          if ($test.skip_url -eq "true") {
+            $cmd = "$envVars bash ./mlc-r2-downloader.sh $($test.args)"
+          } else {
+            $cmd = "$envVars bash ./mlc-r2-downloader.sh $($test.args) $($test.url)"
+          }
+          
+          Write-Host "Running WSL command: $cmd"
+          
+          # Execute and capture output/exit code
+          $output = wsl bash -c $cmd
+          $exitCode = $LASTEXITCODE
+          
+          # Display output
+          Write-Host "Output:"
+          $output | ForEach-Object { Write-Host $_ }
+          
+          # Check result
+          $totalTests++
+          if ($exitCode -eq $test.expect_exit) {
+            Write-Host "✅ [PASS] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
+            $passedTests++
+          } else {
+            Write-Host "❌ [FAIL] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
+            $failedTests++
+          }
         }
         
-    - name: Test script in WSL with service account and testing mode
-      env:
-        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
-        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
-      shell: powershell
-      run: |
-        # Capture environment variables in PowerShell variables for proper expansion
-        $clientId = $env:CF_ACCESS_CLIENT_ID
-        $clientSecret = $env:CF_ACCESS_CLIENT_SECRET
+        # Final summary
+        Write-Host ""
+        Write-Host "=== Test Summary for WSL ==="
+        Write-Host "Total tests: $totalTests"
+        Write-Host "Passed: $passedTests"
+        Write-Host "Failed: $failedTests"
         
-        wsl bash -c "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret'; bash ./mlc-r2-downloader.sh -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri"
+        # Exit with failure if any tests failed
+        if ($failedTests -gt 0) {
+          Write-Host "❌ Some tests failed in WSL"
+          exit 1
+        } else {
+          Write-Host "✅ All tests passed in WSL"
+          exit 0
+        }
 
-    - name: Test script in WSL with no authentication required
-      shell: powershell
-      run: |
-        # Run script with no authentication required
-        wsl bash -c "bash ./mlc-r2-downloader.sh -st -d test/dataset https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri"
-
-    - name: Test script in WSL with single-file dataset
-      shell: powershell
-      run: |
-        # Run script with single-file dataset
-        wsl bash -c "bash ./mlc-r2-downloader.sh https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri"
-
+  # Windows Cygwin
   test-windows-cygwin:
+    needs: define-tests
     runs-on: windows-latest
     environment: testing
     timeout-minutes: 10
@@ -208,46 +399,115 @@ jobs:
           Get-ChildItem "C:\cygwin64\bin" | Select-Object Name | Format-Table -AutoSize
         }
       
-    - name: Test script in Cygwin with debug mode
-      env:
-        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
-        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
+    - name: Run all test cases in Cygwin
       shell: powershell
       run: |
-        # Capture environment variables in PowerShell variables for proper expansion
-        $clientId = $env:CF_ACCESS_CLIENT_ID
-        $clientSecret = $env:CF_ACCESS_CLIENT_SECRET
+        # Parse the test matrix JSON
+        $tests = '${{ needs.define-tests.outputs.test-matrix }}' | ConvertFrom-Json
         
-        $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
-        $repoPath = $repoPath.ToLower()
-        C:\cygwin64\bin\bash.exe --login -c "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret'; bash '$repoPath/mlc-r2-downloader.sh' -xs https://auth-test.mlcommons-storage.org/metadata/dataset.uri; exit_code=`$?; if [ `"`$exit_code`" -ne 0 ]; then echo '[FAIL] Wrong exit code: `$exit_code'; exit 1; else echo '[PASS] Correct exit code 0 received.'; fi"
-      
-    - name: Test script in Cygwin with service account and testing mode
-      env:
-        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
-        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
-      shell: powershell
-      run: |
-        # Capture environment variables in PowerShell variables for proper expansion
-        $clientId = $env:CF_ACCESS_CLIENT_ID
-        $clientSecret = $env:CF_ACCESS_CLIENT_SECRET
+        # Initialize counters
+        $totalTests = 0
+        $passedTests = 0
+        $failedTests = 0
         
+        # Convert Windows path to Cygwin path
         $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
         $repoPath = $repoPath.ToLower()
-        C:\cygwin64\bin\bash.exe --login -c "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret'; bash '$repoPath/mlc-r2-downloader.sh' -st -d test/dataset https://auth-test.mlcommons-storage.org/metadata/dataset.uri && echo '[PASS] Cygwin service account test PASSED!'"
+        
+        Write-Host "=== Running All Test Cases in Cygwin ==="
+        
+        # Process each test case
+        foreach ($test in $tests.include) {
+          Write-Host ""
+          Write-Host "--- Test: $($test.name) ---"
+          Write-Host "Description: $($test.description)"
+          Write-Host "Expected exit code: $($test.expect_exit)"
+          
+          # Set up environment variables for this test
+          $clientId = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}"
+          $clientSecret = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}"
+          
+          if ($test.skip_creds -eq "true") {
+            $clientId = ""
+            $clientSecret = ""
+          }
+          
+          # Build command
+          $envVars = ""
+          if ($clientId -and $clientSecret) {
+            $envVars = "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret';"
+          }
+          
+          if ($test.skip_url -eq "true") {
+            $cmd = "$envVars bash '$repoPath/mlc-r2-downloader.sh' $($test.args); echo `"EXIT_CODE:`$?`""
+          } else {
+            $cmd = "$envVars bash '$repoPath/mlc-r2-downloader.sh' $($test.args) $($test.url); echo `"EXIT_CODE:`$?`""
+          }
+          
+          Write-Host "Running Cygwin command: $cmd"
+          
+          # Execute command
+          $output = C:\cygwin64\bin\bash.exe --login -c $cmd
+          
+          # Extract exit code from output
+          $exitCode = 0
+          $cleanOutput = @()
+          foreach ($line in $output) {
+            if ($line -match "^EXIT_CODE:(\d+)$") {
+              $exitCode = [int]$matches[1]
+            } else {
+              $cleanOutput += $line
+            }
+          }
+          
+          # Display clean output
+          Write-Host "Output:"
+          $cleanOutput | ForEach-Object { Write-Host $_ }
+          
+          # Check result
+          $totalTests++
+          if ($exitCode -eq $test.expect_exit) {
+            Write-Host "✅ [PASS] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
+            $passedTests++
+          } else {
+            Write-Host "❌ [FAIL] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
+            $failedTests++
+          }
+        }
+        
+        # Final summary
+        Write-Host ""
+        Write-Host "=== Test Summary for Cygwin ==="
+        Write-Host "Total tests: $totalTests"
+        Write-Host "Passed: $passedTests"
+        Write-Host "Failed: $failedTests"
+        
+        # Exit with failure if any tests failed
+        if ($failedTests -gt 0) {
+          Write-Host "❌ Some tests failed in Cygwin"
+          exit 1
+        } else {
+          Write-Host "✅ All tests passed in Cygwin"
+        }
 
-    - name: Test script in Cygwin with no authentication required
-      shell: powershell
-      run: |
-        # Run script with no authentication required
-        $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
-        $repoPath = $repoPath.ToLower()
-        C:\cygwin64\bin\bash.exe --login -c "bash '$repoPath/mlc-r2-downloader.sh' -st -d test/dataset https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri"
-
-    - name: Test script in Cygwin with single-file dataset
-      shell: powershell
-      run: |
-        # Run script with single-file dataset
-        $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
-        $repoPath = $repoPath.ToLower()
-        C:\cygwin64\bin\bash.exe --login -c "bash '$repoPath/mlc-r2-downloader.sh' https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri"
+  # Summary job that depends on all test jobs
+  test-summary:
+    needs: [test-unix, test-windows-wsl, test-windows-cygwin]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          echo "Test Results Summary:"
+          echo "Unix tests: ${{ needs.test-unix.result }}"
+          echo "WSL tests: ${{ needs.test-windows-wsl.result }}"
+          echo "Cygwin tests: ${{ needs.test-windows-cygwin.result }}"
+          
+          if [[ "${{ needs.test-unix.result }}" != "success" ]] || \
+             [[ "${{ needs.test-windows-wsl.result }}" != "success" ]] || \
+             [[ "${{ needs.test-windows-cygwin.result }}" != "success" ]]; then
+            echo "❌ Some tests failed!"
+            exit 1
+          else
+            echo "✅ All tests passed!"
+          fi
