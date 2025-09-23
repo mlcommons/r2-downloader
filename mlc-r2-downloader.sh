@@ -145,19 +145,19 @@ cleanup() {
 trap cleanup EXIT
 
 # Detect OS
-case "$OSTYPE" in
-    "darwin"*)
+case "$(uname -s)" in
+    "Darwin")
         OS="macos"
         ;;
-    "linux-gnu"*)
+    "Linux")
         if uname -a | grep -qi "microsoft"; then
             OS="wsl"
         else
             OS="linux"
         fi
         ;;
-    "cygwin"*)
-        # Cygwin on Windows
+    "CYGWIN"* | "MINGW"* | "MSYS"*)
+        # Cygwin, MinGW, or MSYS on Windows
         OS="cygwin"
         ;;
     *)
