@@ -10,7 +10,7 @@ on:
       - 'cygwin-wget-installer.bat'
       - '.github/workflows/test-downloader.yml'
 
-# Prevent multiple runs from the same PR
+# Prevent simultaneous runs from the same PR
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
