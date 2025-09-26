@@ -4,7 +4,7 @@ FROM ubuntu:latest
 ARG TARGETARCH=amd64
 
 # Install dependencies, download architecture-specific cloudflared, and clean up in one layer
-RUN set -euo pipefail; \
+RUN set -eu; \
     arch="$TARGETARCH"; \
     case "$arch" in \
       amd64|arm64) ;; \
