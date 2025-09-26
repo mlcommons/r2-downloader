@@ -22,106 +22,13 @@ jobs:
     outputs:
       test-matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
       - id: set-matrix
         run: |
           echo "matrix<<EOF" >> $GITHUB_OUTPUT
-          cat << 'MATRIX_EOF' >> $GITHUB_OUTPUT
-          {
-            "include": [
-              {
-                "name": "help_flag",
-                "description": "Help flag should work without URL",
-                "args": "-h",
-                "url": "",
-                "expect_exit": 0,
-                "needs_auth": false,
-                "skip_url": true
-              },
-              {
-                "name": "debug_mode",
-                "description": "Debug mode with service account",
-                "args": "-xs",
-                "url": "https://auth-test.mlcommons-storage.org/metadata/dataset.uri",
-                "expect_exit": 0,
-                "needs_auth": true,
-                "skip_url": false
-              },
-              {
-                "name": "missing_url_service_account",
-                "description": "Service account flag without URL should fail",
-                "args": "-s",
-                "url": "",
-                "expect_exit": 1,
-                "needs_auth": false,
-                "skip_url": true
-              },
-              {
-                "name": "missing_url_multiple_flags",
-                "description": "Multiple flags without URL should fail",
-                "args": "-s -t",
-                "url": "",
-                "expect_exit": 1,
-                "needs_auth": false,
-                "skip_url": true
-              },
-              {
-                "name": "missing_download_dir_arg",
-                "description": "Download directory flag without directory argument should fail",
-                "args": "-d",
-                "url": "",
-                "expect_exit": 1,
-                "needs_auth": false,
-                "skip_url": true
-              },
-              {
-                "name": "service_account_auth",
-                "description": "Service account with testing mode (auth required)",
-                "args": "-st -d test/dataset",
-                "url": "https://auth-test.mlcommons-storage.org/metadata/dataset.uri",
-                "expect_exit": 0,
-                "needs_auth": true,
-                "skip_url": false
-              },
-              {
-                "name": "no_auth_required",
-                "description": "No authentication required dataset",
-                "args": "-st -d test/dataset",
-                "url": "https://no-auth-test.mlcommons-storage.org/metadata/dataset.uri",
-                "expect_exit": 0,
-                "needs_auth": false,
-                "skip_url": false
-              },
-              {
-                "name": "single_file_dataset",
-                "description": "Single file dataset download",
-                "args": "",
-                "url": "https://no-auth-test.mlcommons-storage.org/metadata/single-file-dataset.uri",
-                "expect_exit": 0,
-                "needs_auth": false,
-                "skip_url": false
-              },
-              {
-                "name": "invalid_url",
-                "description": "Invalid URL format should fail",
-                "args": "-st",
-                "url": "not-a-valid-url",
-                "expect_exit": 1,
-                "needs_auth": false,
-                "skip_url": false
-              },
-              {
-                "name": "missing_credentials",
-                "description": "Service account without credentials should fail",
-                "args": "-s",
-                "url": "https://auth-test.mlcommons-storage.org/metadata/dataset.uri",
-                "expect_exit": 1,
-                "needs_auth": false,
-                "skip_url": false,
-                "skip_creds": true
-              }
-            ]
-          }
-          MATRIX_EOF
+          cat .github/workflows/test-matrix.json >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
   # Unix platforms (Linux and macOS)
