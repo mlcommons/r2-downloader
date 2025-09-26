@@ -1,0 +1,217 @@
+name: Build, Push, and Test Container Image
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened ]
+  workflow_dispatch:
+  schedule:
+    - cron: '44 4 4 * *'
+
+# Prevent simultaneous runs from the same PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-push-test:
+    runs-on: ubuntu-latest
+    environment: ghcr
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: arm64
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=pr
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push Docker image
+      id: build-and-push
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        platforms: linux/amd64,linux/arm64
+        cache-from: type=gha
+        cache-to: type=gha,mode=min
+
+    - name: Load secrets
+      id: op-load-secrets
+      uses: 1password/load-secrets-action@v3
+      env:
+        OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
+        CF_ACCESS_CLIENT_SECRET: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
+
+    - name: Run test matrix in container (linux/amd64)
+      env:
+        IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
+        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
+      run: |
+        set +e
+        total_tests=0
+        passed_tests=0
+        failed_tests=0
+
+        while IFS= read -r test_case; do
+          total_tests=$((total_tests + 1))
+
+          test_name=$(echo "$test_case" | jq -r '.name')
+          test_desc=$(echo "$test_case" | jq -r '.description')
+          test_args=$(echo "$test_case" | jq -r '.args')
+          test_url=$(echo "$test_case" | jq -r '.url')
+          expected_exit=$(echo "$test_case" | jq -r '.expect_exit')
+          skip_url=$(echo "$test_case" | jq -r '.skip_url')
+          skip_creds=$(echo "$test_case" | jq -r '.skip_creds // false')
+
+          echo ""
+          echo "--- Test: $test_name ---"
+          echo "Description: $test_desc"
+          echo "Expected exit: $expected_exit"
+          echo "Platform: linux/amd64"
+
+          docker_cmd=(docker run --rm --pull always --platform linux/amd64)
+
+          if [ "$skip_creds" != "true" ]; then
+            docker_cmd+=(
+              -e "CF_ACCESS_CLIENT_ID=$CF_ACCESS_CLIENT_ID"
+              -e "CF_ACCESS_CLIENT_SECRET=$CF_ACCESS_CLIENT_SECRET"
+            )
+          fi
+
+          docker_cmd+=("$IMAGE_REF" bash -lc)
+
+          if [ "$skip_url" = "true" ]; then
+            test_command="r2-downloader $test_args"
+          else
+            test_command="r2-downloader $test_args $test_url"
+          fi
+
+          echo "Running: docker run --rm ... bash -lc \"$test_command\""
+
+          "${docker_cmd[@]}" "$test_command"
+          actual_exit=$?
+
+          if [ $actual_exit -eq $expected_exit ]; then
+            echo "✅ [PASS] $test_name"
+            passed_tests=$((passed_tests + 1))
+          else
+            echo "❌ [FAIL] $test_name - expected $expected_exit, got $actual_exit"
+            failed_tests=$((failed_tests + 1))
+          fi
+
+        done < <(jq -c '.include[]' .github/workflows/test-matrix.json)
+
+        echo ""
+        echo "=== Container Test Summary ==="
+        echo "Total: $total_tests"
+        echo "Passed: $passed_tests"
+        echo "Failed: $failed_tests"
+
+        if [ $failed_tests -gt 0 ]; then
+          exit 1
+        fi
+
+    - name: Run test matrix in container (linux/arm64)
+      env:
+        IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+        CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
+        CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
+      run: |
+        set +e
+        total_tests=0
+        passed_tests=0
+        failed_tests=0
+
+        while IFS= read -r test_case; do
+          total_tests=$((total_tests + 1))
+
+          test_name=$(echo "$test_case" | jq -r '.name')
+          test_desc=$(echo "$test_case" | jq -r '.description')
+          test_args=$(echo "$test_case" | jq -r '.args')
+          test_url=$(echo "$test_case" | jq -r '.url')
+          expected_exit=$(echo "$test_case" | jq -r '.expect_exit')
+          skip_url=$(echo "$test_case" | jq -r '.skip_url')
+          skip_creds=$(echo "$test_case" | jq -r '.skip_creds // false')
+
+          echo ""
+          echo "--- Test: $test_name ---"
+          echo "Description: $test_desc"
+          echo "Expected exit: $expected_exit"
+          echo "Platform: linux/arm64"
+
+          docker_cmd=(docker run --rm --pull always --platform linux/arm64)
+
+          if [ "$skip_creds" != "true" ]; then
+            docker_cmd+=(
+              -e "CF_ACCESS_CLIENT_ID=$CF_ACCESS_CLIENT_ID"
+              -e "CF_ACCESS_CLIENT_SECRET=$CF_ACCESS_CLIENT_SECRET"
+            )
+          fi
+
+          docker_cmd+=("$IMAGE_REF" bash -lc)
+
+          if [ "$skip_url" = "true" ]; then
+            test_command="r2-downloader $test_args"
+          else
+            test_command="r2-downloader $test_args $test_url"
+          fi
+
+          echo "Running: docker run --rm ... bash -lc \"$test_command\""
+
+          "${docker_cmd[@]}" "$test_command"
+          actual_exit=$?
+
+          if [ $actual_exit -eq $expected_exit ]; then
+            echo "✅ [PASS] $test_name"
+            passed_tests=$((passed_tests + 1))
+          else
+            echo "❌ [FAIL] $test_name - expected $expected_exit, got $actual_exit"
+            failed_tests=$((failed_tests + 1))
+          fi
+
+        done < <(jq -c '.include[]' .github/workflows/test-matrix.json)
+
+        echo ""
+        echo "=== Container Test Summary (arm64) ==="
+        echo "Total: $total_tests"
+        echo "Passed: $passed_tests"
+        echo "Failed: $failed_tests"
+
+        if [ $failed_tests -gt 0 ]; then
+          exit 1
+        fi
