@@ -1,6 +1,7 @@
 # Repo Contents:
 
 * [MLCommons R2 Downloader](#mlcommons-r2-downloader)
+* [Container Image](#container-image)
 * [Cygwin + Wget Installer](#cygwin--wget-installer)
 
 ## MLCommons R2 Downloader
@@ -19,6 +20,7 @@ The MLCommons R2 Downloader is a bash script that downloads datasets from R2 buc
 - **Linux & macOS:** Works natively with built-in bash
 - **Windows with WSL:** Use Windows Subsystem for Linux (recommended)
 - **Windows with Cygwin:** For users who don't have WSL and want a lightweight bash environment, you can use our cygwin+wget installer utility.
+- **Container Image:** For users who don't want to install dependencies or run the script natively, you can use our container image.
 
 ### Requirements
 
@@ -53,9 +55,33 @@ The downloader supports several options:
 
 **Note:** All options must be specified *before* the `<URL>` argument.
 
+## Container Image
+
+We distribute a container image with all R2 Downloader dependencies, as well as the latest version of the script, pre-installed. You can pull the image from [ghcr.io/mlcommons/r2-downloader:latest](https://ghcr.io/mlcommons/r2-downloader:latest).
+
+_**Note:** The following instructions work for both Docker and Podman._
+
+You can run the image with an interactive shell and mount your current directory to the default working directory for the container (/download) with the following command:
+
+```shell
+docker run -it --rm -v "$PWD":/download:z ghcr.io/mlcommons/r2-downloader:latest
+```
+
+You can then run the R2 Downloader by either pasting in full commands that include downloading the script (see [Usage](#usage)) or by using the built-in `r2-downloader` command:
+
+```shell
+r2-downloader [options] <URL>
+```
+
+If you don't want to launch a full interactive shell session, you can run `r2-downloader` commands from your host machine inside the container (`-it` is still required as the script is interactive when authenticating):
+
+```shell
+docker run -it --rm -v "$PWD":/download:z ghcr.io/mlcommons/r2-downloader:latest r2-downloader [options] <URL>
+```
+
 ## Cygwin + Wget Installer
 
-If you're on Windows and don't have WSL, you can use our cygwin+wget installer:
+If you're on Windows and don't have WSL, you can use our cygwin+wget installer to prepare an environment for running the R2 Downloader:
 
 1. **Download:** Get the installer from GitHub [here](https://github.com/mlcommons/r2-downloader/blob/main/cygwin-wget-installer.bat).
 2. **Install:** Double-click the downloaded file to run it. The installer is PowerShell wrapped in batch, which allows it to run natively on Windows. It will automatically install Cygwin and `wget`
