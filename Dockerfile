@@ -16,7 +16,7 @@ RUN set -eu; \
       wget \
       coreutils \
     && rm -rf /var/lib/apt/lists/* \
-    && wget -v -O /usr/local/bin/cloudflared \
+    && wget -O /usr/local/bin/cloudflared \
        "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$arch" \
     && chmod +x /usr/local/bin/cloudflared \
     && cloudflared --version
