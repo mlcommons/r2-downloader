@@ -1,6 +1,7 @@
 FROM ubuntu:latest
 
-ARG TARGETARCH
+# Set default architecture to amd64 for local builds
+ARG TARGETARCH=amd64
 
 # Install dependencies, download architecture-specific cloudflared, and clean up in one layer
 RUN set -euo pipefail; \
