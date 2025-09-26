@@ -17,6 +17,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: testing
     permissions:
       contents: read
       packages: write
@@ -45,12 +46,12 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build and push Docker image
+      id: build-and-push
       uses: docker/build-push-action@v6
       with:
         context: .
         file: ./Dockerfile
         push: true
-        load: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         platforms: linux/amd64,linux/arm64
@@ -67,7 +68,7 @@ jobs:
 
     - name: Run test matrix in container
       env:
-        IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+        IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}
         CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
         CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
       run: |
@@ -92,7 +93,7 @@ jobs:
           echo "Description: $test_desc"
           echo "Expected exit: $expected_exit"
 
-          docker_cmd=(docker run --rm)
+          docker_cmd=(docker run --rm --pull always --platform linux/amd64)
 
           if [ "$skip_creds" != "true" ]; then
             docker_cmd+=(
