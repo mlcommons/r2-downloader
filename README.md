@@ -1,12 +1,14 @@
-# Repo Contents:
+# MLCommons R2 Downloader
+
+## Table of Contents
 
 * [MLCommons R2 Downloader](#mlcommons-r2-downloader)
 * [Container Image](#container-image)
 * [Cygwin + Wget Installer](#cygwin--wget-installer)
 
-## MLCommons R2 Downloader
+## Overview
 
-### How It Works
+### What It Does
 
 The MLCommons R2 Downloader is a bash script that downloads datasets from R2 buckets and verifies their integrity. In the case of buckets protected by Cloudflare Access, it automatically handles authentication. Depending on the need for authentication, it will:
 
