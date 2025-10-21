@@ -582,7 +582,7 @@ confirm_token_invalidation() {
         
         # Test if token is still valid by trying to access the protected resource
         local http_code
-        http_code=$(curl -H "cf-access-token: $TOKEN" --max-time 60 --retry 1 --retry-connrefused --silent --write-out "%{http_code}" --output /dev/null "$url_dataset_info" 2>/dev/null)
+        http_code=$(curl -H "cf-access-token: $TOKEN" -C - --max-time 60 --retry 1 --retry-connrefused --silent --write-out "%{http_code}" --output /dev/null "$url_dataset_info" 2>/dev/null)
         
         if [ "$http_code" = "200" ]; then
             echo "Token still valid (HTTP $http_code)"
