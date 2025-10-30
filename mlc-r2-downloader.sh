@@ -30,7 +30,8 @@ ARGUMENTS:
 
 OPTIONS:
     -d download-path       Directory where files will be downloaded.
-                           Defaults to the dataset name from the URL if not specified.
+                           For single-file datasets, defaults to the current directory.
+                           For multi-file datasets, defaults to the directory name within the R2 bucket.
     -s                     Use service-account credentials for authentication (requires
                            CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET environment variables).
     -t                     Testing mode: runs reduced, non-interactive checks and always verifies
