@@ -49,7 +49,7 @@ _The metadata files are maintained in the [R2 Infra repo](https://github.com/mlc
 
 The downloader supports several options:
 
-- `-d <download-path>` - Specify download directory (defaults to dataset name)
+- `-d <download-path>` - Specify download directory (defaults to directory name within the R2 bucket for multi-file datasets, current directory for single-file datasets)
 - `-h` - Show help message
 - `-s` - Use service account credentials for authentication (requires CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET environment variables)
 - `-t` - Testing mode for running automated tests of the script with service account credentials
