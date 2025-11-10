@@ -3,9 +3,17 @@ name: Build, Push, and Test Container Image
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'mlc-r2-downloader.sh'
+      - 'Dockerfile'
+      - '.github/workflows/build-test-image.yml'
   pull_request:
     branches: [ main ]
     types: [ opened, synchronize, reopened ]
+    paths:
+      - 'mlc-r2-downloader.sh'
+      - 'Dockerfile'
+      - '.github/workflows/build-test-image.yml'
   workflow_dispatch:
   schedule:
     - cron: '44 4 4 * *'
