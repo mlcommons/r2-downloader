@@ -988,17 +988,17 @@ _download_one() {
     # progress bar instead of suppressing it - especially useful for large files.
     if [[ "$_MLC_PARALLEL_JOBS" == 1 ]]; then
         progress_args=(--progress=bar:force)
-    else
-        echo "Starting: $rel"
     fi
     if wget "${header_args[@]}" --continue -nH -x --cut-dirs="$_MLC_CUT_DIRS" \
         -P "$_MLC_DOWNLOAD_DIR" "${progress_args[@]}" --max-redirect=0 \
         --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 "$url"; then
+        # With more than one job, per-file progress bars would interleave into garbage, so
+        # completions are recorded here and rendered as a single aggregate line by the caller.
         if [[ "$_MLC_PARALLEL_JOBS" != 1 ]]; then
-            echo "Finished: $rel"
+            echo "$rel" >> "$_MLC_PROGRESS_FILE"
         fi
     else
-        echo "Failed:   $rel" >&2
+        echo -e "\nFailed: $rel" >&2
         exit 1
     fi
 }
@@ -1009,9 +1009,41 @@ export _MLC_DOWNLOAD_DIR="$download_dir"
 export _MLC_ACCESS_HEADER="${ACCESS_HEADER[0]:-}"
 export _MLC_PARALLEL_JOBS="$PARALLEL_JOBS"
 
-sed "s|^|${dataset_base_url%/}/|" "$urls_file" | \
-    xargs -P "$PARALLEL_JOBS" -I{} bash -c '_download_one "$@"' _ {} \
-    || { echo "Error: Download failed. Re-run the script to resume the download." >&2; exit 1; }
+if [[ "$PARALLEL_JOBS" == 1 ]]; then
+    sed "s|^|${dataset_base_url%/}/|" "$urls_file" | \
+        xargs -P "$PARALLEL_JOBS" -I{} bash -c '_download_one "$@"' _ {} \
+        || { echo "Error: Download failed. Re-run the script to resume the download." >&2; exit 1; }
+else
+    # Run the parallel download in the background so this shell can poll the shared
+    # progress file and render a single self-overwriting status line - the only safe way
+    # to show live progress across multiple concurrent, otherwise-quiet wget processes.
+    progress_file=$(mktemp)
+    export _MLC_PROGRESS_FILE="$progress_file"
+
+    (
+        sed "s|^|${dataset_base_url%/}/|" "$urls_file" | \
+            xargs -P "$PARALLEL_JOBS" -I{} bash -c '_download_one "$@"' _ {}
+    ) &
+    download_pid=$!
+
+    while kill -0 "$download_pid" 2>/dev/null; do
+        completed=$(wc -l < "$progress_file" 2>/dev/null || echo 0)
+        printf '\rDownloaded: %d/%d files' "$completed" "$total_files"
+        sleep 0.5
+    done
+
+    wait "$download_pid"
+    download_rc=$?
+
+    completed=$(wc -l < "$progress_file" 2>/dev/null || echo 0)
+    printf '\rDownloaded: %d/%d files\n' "$completed" "$total_files"
+    rm -f "$progress_file"
+
+    if [[ $download_rc -ne 0 ]]; then
+        echo "Error: Download failed. Re-run the script to resume the download." >&2
+        exit 1
+    fi
+fi
 
 echo "Download completed successfully!"
 
