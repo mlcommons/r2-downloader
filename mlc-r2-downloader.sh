@@ -14,11 +14,9 @@ SMALL_DATASET_FILE_THRESHOLD=20
 # Empty means "not explicitly set"; the actual default is computed once the file count is known:
 # 1 job for small datasets (fewer than SMALL_DATASET_FILE_THRESHOLD files), otherwise
 # DEFAULT_MAX_PARALLEL_JOBS. Either way it's capped so there are never more jobs than files.
+# Validated after option parsing (below) so that -j can override a bad value and -h/-? still
+# work even when MLC_PARALLEL_JOBS is garbage.
 PARALLEL_JOBS="${MLC_PARALLEL_JOBS:-}"
-if [[ -n "$PARALLEL_JOBS" ]] && ! [[ "$PARALLEL_JOBS" =~ ^[1-9][0-9]*$ ]]; then
-    echo "Error: MLC_PARALLEL_JOBS must be a positive integer, got '$PARALLEL_JOBS'" >&2
-    exit 1
-fi
 
 # Cloudflare Access constants for MLCommons
 CLOUDFLARE_ACCESS_SUBDOMAIN="mlcommons"
@@ -130,6 +128,13 @@ while getopts "d:j:xhst" opt; do
             ;;
     esac
 done
+
+# Only reached if -j wasn't passed (it validates and assigns inline above), so any value here
+# came from MLC_PARALLEL_JOBS.
+if [[ -n "$PARALLEL_JOBS" ]] && ! [[ "$PARALLEL_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: MLC_PARALLEL_JOBS must be a positive integer, got '$PARALLEL_JOBS'" >&2
+    exit 1
+fi
 
 # Shift processed options so that only positional arguments remain
 shift $((OPTIND - 1))
