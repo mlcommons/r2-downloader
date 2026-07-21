@@ -21,6 +21,7 @@ downloader_run() {
         if [[ "$creds" == 1 ]]; then
             docker_args+=(-e CF_ACCESS_CLIENT_ID -e CF_ACCESS_CLIENT_SECRET)
         fi
+        [[ -n "${MLC_PARALLEL_JOBS:-}" ]] && docker_args+=(-e MLC_PARALLEL_JOBS)
         run docker run "${docker_args[@]}" "$IMAGE_REF" bash -lc "$joined"
     else
         if [[ "$creds" == 1 ]]; then

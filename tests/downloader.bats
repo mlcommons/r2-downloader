@@ -60,3 +60,31 @@ setup() {
     downloader_run --no-creds -s "$AUTH_TEST_URL"
     [ "$status" -eq 1 ]
 }
+
+@test "-j requires a positive integer" {
+    downloader_run -j abc -h
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"positive integer"* ]]
+}
+
+@test "MLC_PARALLEL_JOBS must be a positive integer" {
+    MLC_PARALLEL_JOBS=abc downloader_run
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"positive integer"* ]]
+}
+
+@test "-h works even when MLC_PARALLEL_JOBS is garbage" {
+    MLC_PARALLEL_JOBS=abc downloader_run -h
+    [ "$status" -eq 0 ]
+}
+
+@test "-j overrides a bad MLC_PARALLEL_JOBS instead of erroring first" {
+    MLC_PARALLEL_JOBS=abc downloader_run -j 3 -h
+    [ "$status" -eq 0 ]
+}
+
+@test "service account auth succeeds with forced parallel downloads" {
+    downloader_run -st -j 2 -d test/dataset-parallel "$AUTH_TEST_URL"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Downloaded:"* ]]
+}
