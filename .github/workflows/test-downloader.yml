@@ -68,15 +68,22 @@ jobs:
       with:
         submodules: true
 
-    - name: Force LF checkout of the bats-core submodule
+    - name: Normalize line endings in the bats-core submodule
       shell: powershell
       run: |
-        # actions/checkout's submodule fetch doesn't reliably pick up the autocrlf=false
-        # set above, so the submodule can still land with CRLF line endings, which breaks
-        # its shebang-driven scripts under bash. Delete and re-check-it-out explicitly,
-        # forcing the setting on the command line rather than trusting ambient config.
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue tests\libs\bats-core
-        git -c core.autocrlf=false submodule update --init --force
+        # bats-core's own .gitattributes marks most files `text=auto`, and this runner's
+        # core.eol (not core.autocrlf, which we already set above) still checks them out
+        # as CRLF, breaking bash's parsing of its shebang-driven scripts. Normalizing the
+        # checked-out files directly sidesteps needing to fight git's config precedence.
+        # Scoped to bin/lib/libexec (the only directories bats actually loads at runtime)
+        # to avoid mangling binary content elsewhere in the submodule (e.g. a GPG key
+        # under docker/).
+        Get-ChildItem -Path tests\libs\bats-core\bin,tests\libs\bats-core\lib,tests\libs\bats-core\libexec -Recurse -File | ForEach-Object {
+          $text = [System.IO.File]::ReadAllText($_.FullName)
+          if ($text -match "`r`n") {
+            [System.IO.File]::WriteAllText($_.FullName, ($text -replace "`r`n", "`n"))
+          }
+        }
 
     - name: Load secrets
       id: op-load-secrets
@@ -124,15 +131,22 @@ jobs:
       with:
         submodules: true
 
-    - name: Force LF checkout of the bats-core submodule
+    - name: Normalize line endings in the bats-core submodule
       shell: powershell
       run: |
-        # actions/checkout's submodule fetch doesn't reliably pick up the autocrlf=false
-        # set above, so the submodule can still land with CRLF line endings, which breaks
-        # its shebang-driven scripts under bash. Delete and re-check-it-out explicitly,
-        # forcing the setting on the command line rather than trusting ambient config.
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue tests\libs\bats-core
-        git -c core.autocrlf=false submodule update --init --force
+        # bats-core's own .gitattributes marks most files `text=auto`, and this runner's
+        # core.eol (not core.autocrlf, which we already set above) still checks them out
+        # as CRLF, breaking bash's parsing of its shebang-driven scripts. Normalizing the
+        # checked-out files directly sidesteps needing to fight git's config precedence.
+        # Scoped to bin/lib/libexec (the only directories bats actually loads at runtime)
+        # to avoid mangling binary content elsewhere in the submodule (e.g. a GPG key
+        # under docker/).
+        Get-ChildItem -Path tests\libs\bats-core\bin,tests\libs\bats-core\lib,tests\libs\bats-core\libexec -Recurse -File | ForEach-Object {
+          $text = [System.IO.File]::ReadAllText($_.FullName)
+          if ($text -match "`r`n") {
+            [System.IO.File]::WriteAllText($_.FullName, ($text -replace "`r`n", "`n"))
+          }
+        }
 
     - name: Load secrets
       id: op-load-secrets
