@@ -67,10 +67,12 @@ jobs:
     - name: Configure git for Unix line endings
       shell: powershell
       run: |
-        # Re-checkout files with Unix line endings
+        # Re-checkout files (including the bats-core submodule) with Unix line endings
         git config core.autocrlf false
         git rm --cached -rf .
         git reset --hard HEAD
+        git submodule foreach --recursive "git config core.autocrlf false"
+        git submodule update --init --force
 
     - name: Load secrets
       id: op-load-secrets
@@ -117,10 +119,12 @@ jobs:
     - name: Configure git for Unix line endings
       shell: powershell
       run: |
-        # Re-checkout files with Unix line endings
+        # Re-checkout files (including the bats-core submodule) with Unix line endings
         git config core.autocrlf false
         git rm --cached -rf .
         git reset --hard HEAD
+        git submodule foreach --recursive "git config core.autocrlf false"
+        git submodule update --init --force
 
     - name: Load secrets
       id: op-load-secrets
