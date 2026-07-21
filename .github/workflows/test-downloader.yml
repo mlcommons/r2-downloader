@@ -68,6 +68,16 @@ jobs:
       with:
         submodules: true
 
+    - name: Force LF checkout of the bats-core submodule
+      shell: powershell
+      run: |
+        # actions/checkout's submodule fetch doesn't reliably pick up the autocrlf=false
+        # set above, so the submodule can still land with CRLF line endings, which breaks
+        # its shebang-driven scripts under bash. Delete and re-check-it-out explicitly,
+        # forcing the setting on the command line rather than trusting ambient config.
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue tests\libs\bats-core
+        git -c core.autocrlf=false submodule update --init --force
+
     - name: Load secrets
       id: op-load-secrets
       uses: 1password/load-secrets-action@v3
@@ -113,6 +123,16 @@ jobs:
       uses: actions/checkout@v4
       with:
         submodules: true
+
+    - name: Force LF checkout of the bats-core submodule
+      shell: powershell
+      run: |
+        # actions/checkout's submodule fetch doesn't reliably pick up the autocrlf=false
+        # set above, so the submodule can still land with CRLF line endings, which breaks
+        # its shebang-driven scripts under bash. Delete and re-check-it-out explicitly,
+        # forcing the setting on the command line rather than trusting ambient config.
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue tests\libs\bats-core
+        git -c core.autocrlf=false submodule update --init --force
 
     - name: Load secrets
       id: op-load-secrets
