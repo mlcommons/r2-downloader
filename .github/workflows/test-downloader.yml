@@ -8,6 +8,7 @@ on:
     paths:
       - 'mlc-r2-downloader.sh'
       - 'cygwin-wget-installer.bat'
+      - 'tests/**'
       - '.github/workflows/test-downloader.yml'
 
 # Prevent simultaneous runs from the same PR
@@ -16,34 +17,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Define all test cases in a centralized matrix
-  define-tests:
-    runs-on: ubuntu-latest
-    outputs:
-      test-matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - id: set-matrix
-        run: |
-          echo "matrix<<EOF" >> $GITHUB_OUTPUT
-          cat .github/workflows/test-matrix.json >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
   # Unix platforms (Linux and macOS)
   test-unix:
-    needs: define-tests
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        submodules: true
 
     - name: Install dependencies
       run: |
@@ -51,7 +38,7 @@ jobs:
           # Install md5sum on macOS (not available by default)
           brew install md5sha1sum
         fi
-        
+
     - name: Load secrets
       id: op-load-secrets
       uses: 1password/load-secrets-action@v3
@@ -59,109 +46,45 @@ jobs:
         OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
         CF_ACCESS_CLIENT_SECRET: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
-      
-    - name: Run all test cases
+
+    - name: Run tests
       env:
         CF_ACCESS_CLIENT_ID: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}
         CF_ACCESS_CLIENT_SECRET: ${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}
-      run: |
-        set +e  # Don't exit on error so we can check exit codes
-        
-        # Parse the test matrix JSON
-        tests='${{ needs.define-tests.outputs.test-matrix }}'
-        
-        # Initialize counters
-        total_tests=0
-        passed_tests=0
-        failed_tests=0
-        
-        echo "=== Running All Test Cases on ${{ matrix.os }} ==="
-        
-        # Process each test case
-        echo "$tests" | jq -r '.include[] | @base64' | while read -r encoded_test; do
-          # Decode the test case
-          test_data=$(echo "$encoded_test" | base64 -d)
-          
-          # Extract test properties
-          test_name=$(echo "$test_data" | jq -r '.name')
-          test_desc=$(echo "$test_data" | jq -r '.description')
-          test_args=$(echo "$test_data" | jq -r '.args')
-          test_url=$(echo "$test_data" | jq -r '.url')
-          expected_exit=$(echo "$test_data" | jq -r '.expect_exit')
-          needs_auth=$(echo "$test_data" | jq -r '.needs_auth')
-          skip_url=$(echo "$test_data" | jq -r '.skip_url')
-          skip_creds=$(echo "$test_data" | jq -r '.skip_creds')
-          
-          echo ""
-          echo "--- Test: $test_name ---"
-          echo "Description: $test_desc"
-          echo "Expected exit code: $expected_exit"
-          
-          # Set up environment variables for this test
-          if [[ "$skip_creds" == "true" ]]; then
-            unset CF_ACCESS_CLIENT_ID CF_ACCESS_CLIENT_SECRET
-          else
-            export CF_ACCESS_CLIENT_ID="${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}"
-            export CF_ACCESS_CLIENT_SECRET="${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}"
-          fi
-          
-          # Build command
-          if [[ "$skip_url" == "true" ]]; then
-            cmd="bash ./mlc-r2-downloader.sh $test_args"
-          else
-            cmd="bash ./mlc-r2-downloader.sh $test_args $test_url"
-          fi
-          
-          echo "Running: $cmd"
-          
-          # Execute the test
-          eval "$cmd"
-          actual_exit=$?
-          
-          # Check result
-          total_tests=$((total_tests + 1))
-          if [ $actual_exit -eq $expected_exit ]; then
-            echo "✅ [PASS] $test_name - Expected exit code $expected_exit, got $actual_exit"
-            passed_tests=$((passed_tests + 1))
-          else
-            echo "❌ [FAIL] $test_name - Expected exit code $expected_exit, got $actual_exit"
-            failed_tests=$((failed_tests + 1))
-          fi
-        done
-        
-        # Final summary
-        echo ""
-        echo "=== Test Summary for ${{ matrix.os }} ==="
-        echo "Total tests: $total_tests"
-        echo "Passed: $passed_tests"
-        echo "Failed: $failed_tests"
-        
-        # Exit with failure if any tests failed
-        if [ $failed_tests -gt 0 ]; then
-          echo "❌ Some tests failed on ${{ matrix.os }}"
-          exit 1
-        else
-          echo "✅ All tests passed on ${{ matrix.os }}"
-        fi
+      run: bash tests/libs/bats-core/bin/bats tests/downloader.bats
 
   # Windows WSL
   test-windows-wsl:
-    needs: define-tests
     runs-on: windows-latest
     timeout-minutes: 10
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
     - name: Configure git for Unix line endings
       shell: powershell
+      run: git config --global core.autocrlf false
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Normalize line endings in the bats-core submodule
+      shell: powershell
       run: |
-        # Re-checkout files with Unix line endings
-        git config core.autocrlf false
-        git rm --cached -rf .
-        git reset --hard HEAD
-        
+        # bats-core's own .gitattributes marks most files `text=auto`, and this runner's
+        # core.eol (not core.autocrlf, which we already set above) still checks them out
+        # as CRLF, breaking bash's parsing of its shebang-driven scripts. Normalizing the
+        # checked-out files directly sidesteps needing to fight git's config precedence.
+        # Scoped to bin/lib/libexec (the only directories bats actually loads at runtime)
+        # to avoid mangling binary content elsewhere in the submodule (e.g. a GPG key
+        # under docker/).
+        Get-ChildItem -Path tests\libs\bats-core\bin,tests\libs\bats-core\lib,tests\libs\bats-core\libexec -Recurse -File | ForEach-Object {
+          $text = [System.IO.File]::ReadAllText($_.FullName)
+          if ($text -match "`r`n") {
+            [System.IO.File]::WriteAllText($_.FullName, ($text -replace "`r`n", "`n"))
+          }
+        }
+
     - name: Load secrets
       id: op-load-secrets
       uses: 1password/load-secrets-action@v3
@@ -169,108 +92,62 @@ jobs:
         OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
         CF_ACCESS_CLIENT_SECRET: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
-      
+
     - name: Setup WSL
       uses: Vampire/setup-wsl@v5
       with:
         distribution: Ubuntu-22.04
-        
-    - name: Run all test cases in WSL
+
+    - name: Run tests in WSL
       shell: powershell
       run: |
-        # Parse the test matrix JSON
-        $tests = '${{ needs.define-tests.outputs.test-matrix }}' | ConvertFrom-Json
-        
-        # Initialize counters
-        $totalTests = 0
-        $passedTests = 0
-        $failedTests = 0
-        
-        Write-Host "=== Running All Test Cases in WSL ==="
-        
-        # Process each test case
-        foreach ($test in $tests.include) {
-          Write-Host ""
-          Write-Host "--- Test: $($test.name) ---"
-          Write-Host "Description: $($test.description)"
-          Write-Host "Expected exit code: $($test.expect_exit)"
-          
-          # Set up environment variables for this test
-          $clientId = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}"
-          $clientSecret = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}"
-          
-          if ($test.skip_creds -eq "true") {
-            $clientId = ""
-            $clientSecret = ""
-          }
-          
-          # Build command
-          $envVars = ""
-          if ($clientId -and $clientSecret) {
-            $envVars = "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret';"
-          }
-          
-          if ($test.skip_url -eq "true") {
-            $cmd = "$envVars bash ./mlc-r2-downloader.sh $($test.args)"
-          } else {
-            $cmd = "$envVars bash ./mlc-r2-downloader.sh $($test.args) $($test.url)"
-          }
-          
-          Write-Host "Running WSL command: $cmd"
-          
-          # Execute and capture output/exit code
-          $output = wsl bash -c $cmd
-          $exitCode = $LASTEXITCODE
-          
-          # Display output
-          Write-Host "Output:"
-          $output | ForEach-Object { Write-Host $_ }
-          
-          # Check result
-          $totalTests++
-          if ($exitCode -eq $test.expect_exit) {
-            Write-Host "✅ [PASS] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
-            $passedTests++
-          } else {
-            Write-Host "❌ [FAIL] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
-            $failedTests++
-          }
-        }
-        
-        # Final summary
-        Write-Host ""
-        Write-Host "=== Test Summary for WSL ==="
-        Write-Host "Total tests: $totalTests"
-        Write-Host "Passed: $passedTests"
-        Write-Host "Failed: $failedTests"
-        
-        # Exit with failure if any tests failed
-        if ($failedTests -gt 0) {
-          Write-Host "❌ Some tests failed in WSL"
+        $clientId = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}"
+        $clientSecret = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}"
+        $envVars = "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret';"
+
+        $cmd = "$envVars bash tests/libs/bats-core/bin/bats tests/downloader.bats"
+        Write-Host "Running WSL command: $cmd"
+
+        wsl bash -c $cmd
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "❌ Tests failed in WSL"
           exit 1
         } else {
           Write-Host "✅ All tests passed in WSL"
-          exit 0
         }
 
   # Windows Cygwin
   test-windows-cygwin:
-    needs: define-tests
     runs-on: windows-latest
     timeout-minutes: 10
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
     - name: Configure git for Unix line endings
       shell: powershell
+      run: git config --global core.autocrlf false
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Normalize line endings in the bats-core submodule
+      shell: powershell
       run: |
-        # Re-checkout files with Unix line endings
-        git config core.autocrlf false
-        git rm --cached -rf .
-        git reset --hard HEAD
-      
+        # bats-core's own .gitattributes marks most files `text=auto`, and this runner's
+        # core.eol (not core.autocrlf, which we already set above) still checks them out
+        # as CRLF, breaking bash's parsing of its shebang-driven scripts. Normalizing the
+        # checked-out files directly sidesteps needing to fight git's config precedence.
+        # Scoped to bin/lib/libexec (the only directories bats actually loads at runtime)
+        # to avoid mangling binary content elsewhere in the submodule (e.g. a GPG key
+        # under docker/).
+        Get-ChildItem -Path tests\libs\bats-core\bin,tests\libs\bats-core\lib,tests\libs\bats-core\libexec -Recurse -File | ForEach-Object {
+          $text = [System.IO.File]::ReadAllText($_.FullName)
+          if ($text -match "`r`n") {
+            [System.IO.File]::WriteAllText($_.FullName, ($text -replace "`r`n", "`n"))
+          }
+        }
+
     - name: Load secrets
       id: op-load-secrets
       uses: 1password/load-secrets-action@v3
@@ -278,14 +155,14 @@ jobs:
         OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         CF_ACCESS_CLIENT_ID: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/wsyxxjrdsyj36zsaanbh3kybfe"
         CF_ACCESS_CLIENT_SECRET: "op://x4h33jlflygxmifnxfrizew4oa/7g2fhcv3tpsogr2vhkielewvsm/5x3sr7bry5a3ealsemvx5vcbuy"
-      
+
     - name: Install Cygwin+Wget using installer
       shell: powershell
       run: |
         # Run the cygwin-wget-installer.bat to test the installer and install Cygwin
         Write-Host "Testing and running cygwin-wget-installer.bat..."
         .\cygwin-wget-installer.bat
-        
+
         # Verify Cygwin installation and wget
         if (Test-Path "C:\cygwin64\bin\bash.exe") {
           Write-Host "[PASS] Cygwin bash installation successful"
@@ -293,7 +170,7 @@ jobs:
           Write-Host "[FAIL] Cygwin bash installation failed"
           exit 1
         }
-        
+
         if (Test-Path "C:\cygwin64\bin\wget.exe") {
           Write-Host "[PASS] wget installation successful"
         } else {
@@ -302,93 +179,36 @@ jobs:
           Write-Host "Contents of C:\cygwin64\bin:"
           Get-ChildItem "C:\cygwin64\bin" | Select-Object Name | Format-Table -AutoSize
         }
-      
-    - name: Run all test cases in Cygwin
+
+    - name: Run tests in Cygwin
       shell: powershell
       run: |
-        # Parse the test matrix JSON
-        $tests = '${{ needs.define-tests.outputs.test-matrix }}' | ConvertFrom-Json
-        
-        # Initialize counters
-        $totalTests = 0
-        $passedTests = 0
-        $failedTests = 0
-        
         # Convert Windows path to Cygwin path
         $repoPath = (Get-Location).Path -replace '\\', '/' -replace '^([A-Z]):', '/cygdrive/$1'
         $repoPath = $repoPath.ToLower()
-        
-        Write-Host "=== Running All Test Cases in Cygwin ==="
-        
-        # Process each test case
-        foreach ($test in $tests.include) {
-          Write-Host ""
-          Write-Host "--- Test: $($test.name) ---"
-          Write-Host "Description: $($test.description)"
-          Write-Host "Expected exit code: $($test.expect_exit)"
-          
-          # Set up environment variables for this test
-          $clientId = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}"
-          $clientSecret = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}"
-          
-          if ($test.skip_creds -eq "true") {
-            $clientId = ""
-            $clientSecret = ""
-          }
-          
-          # Build command
-          $envVars = ""
-          if ($clientId -and $clientSecret) {
-            $envVars = "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret';"
-          }
-          
-          if ($test.skip_url -eq "true") {
-            $cmd = "$envVars bash '$repoPath/mlc-r2-downloader.sh' $($test.args); echo `"EXIT_CODE:`$?`""
+
+        $clientId = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_ID }}"
+        $clientSecret = "${{ steps.op-load-secrets.outputs.CF_ACCESS_CLIENT_SECRET }}"
+        $envVars = "export CF_ACCESS_CLIENT_ID='$clientId'; export CF_ACCESS_CLIENT_SECRET='$clientSecret';"
+
+        # bash.exe --login -c doesn't reliably propagate its exit code back to PowerShell,
+        # so surface it explicitly via a marker line instead of trusting $LASTEXITCODE.
+        $cmd = "cd '$repoPath' && $envVars bash tests/libs/bats-core/bin/bats tests/downloader.bats; echo `"EXIT_CODE:`$?`""
+        Write-Host "Running Cygwin command: $cmd"
+
+        $output = C:\cygwin64\bin\bash.exe --login -c $cmd
+
+        $exitCode = 1
+        foreach ($line in $output) {
+          if ($line -match "^EXIT_CODE:(\d+)$") {
+            $exitCode = [int]$matches[1]
           } else {
-            $cmd = "$envVars bash '$repoPath/mlc-r2-downloader.sh' $($test.args) $($test.url); echo `"EXIT_CODE:`$?`""
-          }
-          
-          Write-Host "Running Cygwin command: $cmd"
-          
-          # Execute command
-          $output = C:\cygwin64\bin\bash.exe --login -c $cmd
-          
-          # Extract exit code from output
-          $exitCode = 0
-          $cleanOutput = @()
-          foreach ($line in $output) {
-            if ($line -match "^EXIT_CODE:(\d+)$") {
-              $exitCode = [int]$matches[1]
-            } else {
-              $cleanOutput += $line
-            }
-          }
-          
-          # Display clean output
-          Write-Host "Output:"
-          $cleanOutput | ForEach-Object { Write-Host $_ }
-          
-          # Check result
-          $totalTests++
-          if ($exitCode -eq $test.expect_exit) {
-            Write-Host "✅ [PASS] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
-            $passedTests++
-          } else {
-            Write-Host "❌ [FAIL] $($test.name) - Expected exit code $($test.expect_exit), got $exitCode"
-            $failedTests++
+            Write-Host $line
           }
         }
-        
-        # Final summary
-        Write-Host ""
-        Write-Host "=== Test Summary for Cygwin ==="
-        Write-Host "Total tests: $totalTests"
-        Write-Host "Passed: $passedTests"
-        Write-Host "Failed: $failedTests"
-        
-        # Exit with failure if any tests failed
-        if ($failedTests -gt 0) {
-          Write-Host "❌ Some tests failed in Cygwin"
+
+        if ($exitCode -ne 0) {
+          Write-Host "❌ Tests failed in Cygwin"
           exit 1
         } else {
           Write-Host "✅ All tests passed in Cygwin"
@@ -406,7 +226,7 @@ jobs:
           echo "Unix tests: ${{ needs.test-unix.result }}"
           echo "WSL tests: ${{ needs.test-windows-wsl.result }}"
           echo "Cygwin tests: ${{ needs.test-windows-cygwin.result }}"
-          
+
           if [[ "${{ needs.test-unix.result }}" != "success" ]] || \
              [[ "${{ needs.test-windows-wsl.result }}" != "success" ]] || \
              [[ "${{ needs.test-windows-cygwin.result }}" != "success" ]]; then
