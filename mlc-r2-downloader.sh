@@ -101,10 +101,6 @@ while getopts "d:j:xhst" opt; do
             download_dir="$OPTARG"
             ;;
         j)
-            if ! [[ "$OPTARG" =~ ^[1-9][0-9]*$ ]]; then
-                echo "Error: -j requires a positive integer, got '$OPTARG'" >&2
-                exit 1
-            fi
             PARALLEL_JOBS="$OPTARG"
             ;;
         s)
@@ -129,10 +125,11 @@ while getopts "d:j:xhst" opt; do
     esac
 done
 
-# Only reached if -j wasn't passed (it validates and assigns inline above), so any value here
-# came from MLC_PARALLEL_JOBS.
+# Single validation point for PARALLEL_JOBS, covering both -j and MLC_PARALLEL_JOBS (-j just
+# assigns above without checking). Runs after option parsing so -j has already had a chance to
+# overwrite a bad MLC_PARALLEL_JOBS value, and so -h/-? still work even when it's garbage.
 if [[ -n "$PARALLEL_JOBS" ]] && ! [[ "$PARALLEL_JOBS" =~ ^[1-9][0-9]*$ ]]; then
-    echo "Error: MLC_PARALLEL_JOBS must be a positive integer, got '$PARALLEL_JOBS'" >&2
+    echo "Error: -j/MLC_PARALLEL_JOBS must be a positive integer, got '$PARALLEL_JOBS'" >&2
     exit 1
 fi
 
