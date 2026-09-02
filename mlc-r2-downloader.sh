@@ -9,13 +9,21 @@ USE_CLOUDFLARED=0
 BROWSER_OPENER="N/A"
 HASH_CHECKER="md5sum"
 OS="unknown"
+DEFAULT_MAX_PARALLEL_JOBS=4
+SMALL_DATASET_FILE_THRESHOLD=20
+# Empty means "not explicitly set"; the actual default is computed once the file count is known:
+# 1 job for small datasets (fewer than SMALL_DATASET_FILE_THRESHOLD files), otherwise
+# DEFAULT_MAX_PARALLEL_JOBS. Either way it's capped so there are never more jobs than files.
+# Validated after option parsing (below) so that -j can override a bad value and -h/-? still
+# work even when MLC_PARALLEL_JOBS is garbage.
+PARALLEL_JOBS="${MLC_PARALLEL_JOBS:-}"
 
 # Cloudflare Access constants for MLCommons
 CLOUDFLARE_ACCESS_SUBDOMAIN="mlcommons"
 CLOUDFLARE_ACCESS_LOGOUT_URL="https://${CLOUDFLARE_ACCESS_SUBDOMAIN}.cloudflareaccess.com/cdn-cgi/access/logout"
 
 # Usage string
-USAGE_STRING="USAGE: bash [-d download-path] [-s] [-t] [-x] [-h] <URL>"
+USAGE_STRING="USAGE: bash [-d download-path] [-j parallel-jobs] [-s] [-t] [-x] [-h] <URL>"
 
 # Function to show help
 show_help() {
@@ -32,6 +40,10 @@ OPTIONS:
     -d download-path       Directory where files will be downloaded.
                            For single-file datasets, defaults to the current directory.
                            For multi-file datasets, defaults to the directory name within the R2 bucket.
+    -j parallel-jobs       Number of files to download concurrently. Defaults to 1 for datasets
+                           with fewer than 20 files, otherwise 4; never more than the number of
+                           files to download. Overridable via the MLC_PARALLEL_JOBS environment
+                           variable.
     -s                     Use service-account credentials for authentication (requires
                            CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET environment variables).
     -t                     Testing mode: runs reduced, non-interactive checks and always verifies
@@ -45,6 +57,9 @@ EXAMPLES:
 
     # Download to specific directory
     bash -d /path/to/my-dataset https://public-dataset.mlcommons-storage.org/metadata/dataset-name.uri
+
+    # Download with 8 concurrent connections instead of the default 4
+    bash -j 8 https://public-dataset.mlcommons-storage.org/metadata/dataset-name.uri
 
     # Download a private dataset with interactive browser login
     bash https://private-dataset.mlcommons-storage.org/metadata/dataset-name.uri
@@ -79,11 +94,14 @@ AUTHENTICATION:
 EOF
 }
 
-# Parse command line options  
-while getopts "d:xhst" opt; do
+# Parse command line options
+while getopts "d:j:xhst" opt; do
     case $opt in
         d)
             download_dir="$OPTARG"
+            ;;
+        j)
+            PARALLEL_JOBS="$OPTARG"
             ;;
         s)
             SERVICE_ACCOUNT=1
@@ -106,6 +124,14 @@ while getopts "d:xhst" opt; do
             ;;
     esac
 done
+
+# Single validation point for PARALLEL_JOBS, covering both -j and MLC_PARALLEL_JOBS (-j just
+# assigns above without checking). Runs after option parsing so -j has already had a chance to
+# overwrite a bad MLC_PARALLEL_JOBS value, and so -h/-? still work even when it's garbage.
+if [[ -n "$PARALLEL_JOBS" ]] && ! [[ "$PARALLEL_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: -j/MLC_PARALLEL_JOBS must be a positive integer, got '$PARALLEL_JOBS'" >&2
+    exit 1
+fi
 
 # Shift processed options so that only positional arguments remain
 shift $((OPTIND - 1))
@@ -881,6 +907,7 @@ if [[ $DEBUG_INFO_THEN_EXIT == 1 ]]; then
   echo "USE_CLOUDFLARED: $USE_CLOUDFLARED"
   echo "SERVICE_ACCOUNT: $SERVICE_ACCOUNT"
   echo "TESTING_MODE: $TESTING_MODE"
+  echo "PARALLEL_JOBS: ${PARALLEL_JOBS:-auto (1 if file count < $SMALL_DATASET_FILE_THRESHOLD, else $DEFAULT_MAX_PARALLEL_JOBS, at download time)}"
 
   echo -e "\nInitial request\n"
 
@@ -933,10 +960,92 @@ echo "Preparing file list for download..."
 # The first sed command strips the hash, the second one strips an optional leading './'.
 sed 's/^[a-f0-9]\{32\}[[:space:]]*//' "$download_dir/$HASHES_FILE_NAME" | sed 's,^\./,,' > "$urls_file" || { echo "Error: Failed to create URL list from checksums file" >&2; exit 1; }
 
-echo "Starting download of dataset files..."
+total_files=$(wc -l < "$urls_file")
 
-# Main download command. Use -P to specify the download directory. Mind the trailing "/" after "dataset_base_url; without this wget would "eat" 1 hashes_path
-wget "${ACCESS_HEADER[@]}" --input-file="$urls_file" --continue -nH -x --cut-dirs="$cut_dirs" -B "$dataset_base_url/" -P "$download_dir" --progress=bar:force --max-redirect=0 --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 || { echo "Error: Download failed. Re-run the script to resume the download." >&2; exit 1; }
+# If the user didn't explicitly set a job count (via -j or MLC_PARALLEL_JOBS), small
+# datasets aren't worth parallelizing.
+if [[ -z "$PARALLEL_JOBS" ]]; then
+    if (( total_files < SMALL_DATASET_FILE_THRESHOLD )); then
+        PARALLEL_JOBS=1
+    else
+        PARALLEL_JOBS=$DEFAULT_MAX_PARALLEL_JOBS
+    fi
+fi
+
+# Never launch more jobs than there are files to download, whether the count above or an
+# explicit -j/MLC_PARALLEL_JOBS override.
+if (( total_files > 0 && PARALLEL_JOBS > total_files )); then
+    PARALLEL_JOBS=$total_files
+fi
+
+echo "Starting download of $total_files file(s) with up to $PARALLEL_JOBS parallel connection(s)..."
+
+_download_one() {
+    local url="$1"
+    local rel="${url#${_MLC_BASE_URL}/}"
+    local -a header_args=()
+    [[ -n "$_MLC_ACCESS_HEADER" ]] && header_args=("$_MLC_ACCESS_HEADER")
+    local -a progress_args=(--quiet)
+    # With a single job there's no risk of interleaved output, so show wget's live
+    # progress bar instead of suppressing it - especially useful for large files.
+    if [[ "$_MLC_PARALLEL_JOBS" == 1 ]]; then
+        progress_args=(--progress=bar:force)
+    fi
+    if wget "${header_args[@]}" --continue -nH -x --cut-dirs="$_MLC_CUT_DIRS" \
+        -P "$_MLC_DOWNLOAD_DIR" "${progress_args[@]}" --max-redirect=0 \
+        --retry-on-http-error=500,502,503 --retry-connrefused --timeout=60 "$url"; then
+        # With more than one job, per-file progress bars would interleave into garbage, so
+        # completions are recorded here and rendered as a single aggregate line by the caller.
+        if [[ "$_MLC_PARALLEL_JOBS" != 1 ]]; then
+            echo "$rel" >> "$_MLC_PROGRESS_FILE"
+        fi
+    else
+        echo -e "\nFailed: $rel" >&2
+        exit 1
+    fi
+}
+export -f _download_one
+export _MLC_BASE_URL="${dataset_base_url%/}"
+export _MLC_CUT_DIRS="$cut_dirs"
+export _MLC_DOWNLOAD_DIR="$download_dir"
+export _MLC_ACCESS_HEADER="${ACCESS_HEADER[0]:-}"
+export _MLC_PARALLEL_JOBS="$PARALLEL_JOBS"
+
+if [[ "$PARALLEL_JOBS" == 1 ]]; then
+    sed "s|^|${dataset_base_url%/}/|" "$urls_file" | \
+        xargs -P "$PARALLEL_JOBS" -I{} bash -c '_download_one "$@"' _ {} \
+        || { echo "Error: Download failed. Re-run the script to resume the download." >&2; exit 1; }
+else
+    # Run the parallel download in the background so this shell can poll the shared
+    # progress file and render a single self-overwriting status line - the only safe way
+    # to show live progress across multiple concurrent, otherwise-quiet wget processes.
+    progress_file=$(mktemp)
+    export _MLC_PROGRESS_FILE="$progress_file"
+
+    (
+        sed "s|^|${dataset_base_url%/}/|" "$urls_file" | \
+            xargs -P "$PARALLEL_JOBS" -I{} bash -c '_download_one "$@"' _ {}
+    ) &
+    download_pid=$!
+
+    while kill -0 "$download_pid" 2>/dev/null; do
+        completed=$(wc -l < "$progress_file" 2>/dev/null || echo 0)
+        printf '\rDownloaded: %d/%d files' "$completed" "$total_files"
+        sleep 0.5
+    done
+
+    wait "$download_pid"
+    download_rc=$?
+
+    completed=$(wc -l < "$progress_file" 2>/dev/null || echo 0)
+    printf '\rDownloaded: %d/%d files\n' "$completed" "$total_files"
+    rm -f "$progress_file"
+
+    if [[ $download_rc -ne 0 ]]; then
+        echo "Error: Download failed. Re-run the script to resume the download." >&2
+        exit 1
+    fi
+fi
 
 echo "Download completed successfully!"
 
