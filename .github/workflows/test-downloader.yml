@@ -1,4 +1,4 @@
-name: Test R2 Downloader & Cygwin + Wget Installer
+name: Bats Tests
 
 on:
   workflow_dispatch:
