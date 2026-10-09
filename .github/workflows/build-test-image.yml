@@ -17,8 +17,6 @@ on:
       - 'tests/**'
       - '.github/workflows/build-test-image.yml'
   workflow_dispatch:
-  schedule:
-    - cron: '44 4 4 * *'
 
 # Prevent simultaneous runs from the same PR
 concurrency:
